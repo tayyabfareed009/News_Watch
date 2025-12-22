@@ -856,7 +856,7 @@ const handleSubmit = async () => {
             ) : (
               <>
                 <Ionicons name="cloud-upload" size={20} color="white" />
-                <Text style={styles.postButtonText}>PUBLISH WITH CLOUDINARY</Text>
+                <Text style={styles.postButtonText}>Post</Text>
               </>
             )}
           </TouchableOpacity>

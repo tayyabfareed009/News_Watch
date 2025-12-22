@@ -64,6 +64,12 @@ export default function NewsDetailScreen() {
     fetchNewsData();
   }, [id]);
 
+  useEffect(() => {
+    if (newsData && user) {
+      fetchInitialData();
+    }
+  }, [newsData, user]);
+
   const loadUser = async () => {
     try {
       const userJson = await AsyncStorage.getItem('user');
@@ -75,38 +81,55 @@ export default function NewsDetailScreen() {
       console.error('Error loading user:', error);
     }
   };
-const fetchNewsData = async () => {
-  try {
-    setLoading(true);
-    
-    console.log(`Fetching news with ID: ${id}`);
-    console.log(`Backend URL: ${BACKEND_URL}/api/news/${id}`);
-    
-    const response = await fetch(`${BACKEND_URL}/api/news/${id}`);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+  const fetchNewsData = async () => {
+    try {
+      setLoading(true);
+      
+      console.log(`Fetching news with ID: ${id}`);
+      console.log(`Backend URL: ${BACKEND_URL}/api/news/${id}`);
+      
+      const response = await fetch(`${BACKEND_URL}/api/news/${id}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const result = await response.json();
+      console.log("News API response:", result);
+      
+      if (result.success) {
+        const data = result.news;
+        setNewsData(data);
+        setLikeCount(data.likesCount || 0);
+      } else {
+        throw new Error(result.message || "Failed to fetch news");
+      }
+      
+    } catch (error: any) {
+      console.error("Error fetching news:", error);
+      Alert.alert('Error', `Failed to load news: ${error.message}`);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const fetchInitialData = async () => {
+    if (!newsData || !user) return;
     
-    const result = await response.json();
-    console.log("News API response:", result);
-    
-    if (result.success) {
-      const data = result.news;
-      setNewsData(data);
-      // ... rest of your code
-    } else {
-      throw new Error(result.message || "Failed to fetch news");
+    try {
+      // Check if user liked this news
+      if (newsData.likes && user.id) {
+        setIsLiked(newsData.likes.some(likeId => likeId.toString() === user.id));
+      }
+      
+      // Check bookmarks
+      await checkIfBookmarked(newsData.id);
+    } catch (error) {
+      console.error('Error fetching initial data:', error);
     }
-    
-  } catch (error) {
-    console.error("Error fetching news:", error);
-    Alert.alert('Error', `Failed to load news: ${error.message}`);
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-  }
-};
+  };
 
   const checkIfBookmarked = async (newsId: string) => {
     try {
@@ -204,6 +227,16 @@ const fetchNewsData = async () => {
     } catch (error) {
       console.error('Error sharing:', error);
     }
+  };
+
+  const handleCommentPress = () => {
+    if (!user) {
+      Alert.alert('Login Required', 'Please login to comment on news');
+      router.push('/(auth)/login');
+      return;
+    }
+    
+    router.push(`/news/${id}/comments`);
   };
 
   const formatTime = (dateString: string) => {
@@ -359,10 +392,10 @@ const fetchNewsData = async () => {
             </Text>
           </TouchableOpacity>
 
-          <View style={styles.statItem}>
+          <TouchableOpacity style={styles.statItem} onPress={handleCommentPress}>
             <Ionicons name="chatbubble-outline" size={18} color="#666" />
             <Text style={styles.statText}>{newsData.commentsCount || 0} comments</Text>
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* Share Button */}
@@ -416,7 +449,7 @@ const fetchNewsData = async () => {
       <View style={styles.bottomBar}>
         <TouchableOpacity 
           style={styles.commentButton} 
-          onPress={() => router.push(`/news/${id}/comments`)}
+          onPress={handleCommentPress}
         >
           <Ionicons name="chatbubble-outline" size={22} color="#666" />
           <Text style={styles.commentButtonText}>Comment</Text>

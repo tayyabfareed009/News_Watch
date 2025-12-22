@@ -1950,15 +1950,59 @@ app.post("/api/user/location", checkDB, verifyToken(), async (req, res) => {
 
 // ==================== REPORTER ROUTES ====================
 
+// ==================== REPORTER DASHBOARD ROUTES ====================
+
+// Get reporter's own news articles
 app.get("/api/reporter/news", checkDB, verifyToken(['reporter', 'admin']), async (req, res) => {
   try {
-    const news = await News.find({ author: req.user.id })
-      .sort({ createdAt: -1 });
+    const { page = 1, limit = 20, status } = req.query;
+    const skip = (page - 1) * limit;
+
+    const query = { author: req.user.id };
+    
+    if (status) {
+      query.status = status;
+    }
+
+    const news = await News.find(query)
+      .populate('author', 'name profileImage')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+
+    const total = await News.countDocuments(query);
+
+    // Get news count by status
+    const publishedCount = await News.countDocuments({ 
+      author: req.user.id, 
+      status: 'published' 
+    });
+    const draftCount = await News.countDocuments({ 
+      author: req.user.id, 
+      status: 'draft' 
+    });
+    const archivedCount = await News.countDocuments({ 
+      author: req.user.id, 
+      status: 'archived' 
+    });
+
+    const transformedNews = applyTransform(news);
 
     res.json({
       success: true,
-      news: applyTransform(news),
-      count: news.length
+      news: transformedNews,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit)
+      },
+      counts: {
+        published: publishedCount,
+        draft: draftCount,
+        archived: archivedCount,
+        total
+      }
     });
 
   } catch (error) {
@@ -1971,26 +2015,45 @@ app.get("/api/reporter/news", checkDB, verifyToken(['reporter', 'admin']), async
   }
 });
 
+// Get reporter stats (already exists but let me show you the complete version)
 app.get("/api/reporter/stats", checkDB, verifyToken(['reporter', 'admin']), async (req, res) => {
   try {
+    const userId = new mongoose.Types.ObjectId(req.user.id);
+    
     const totalNews = await News.countDocuments({ author: req.user.id });
-    const totalViews = await News.aggregate([
-      { $match: { author: new mongoose.Types.ObjectId(req.user.id) } },
+    
+    // Calculate total views
+    const viewsResult = await News.aggregate([
+      { $match: { author: userId } },
       { $group: { _id: null, totalViews: { $sum: "$views" } } }
     ]);
-    const totalLikes = await News.aggregate([
-      { $match: { author: new mongoose.Types.ObjectId(req.user.id) } },
+    
+    // Calculate total likes
+    const likesResult = await News.aggregate([
+      { $match: { author: userId } },
       { $group: { _id: null, totalLikes: { $sum: "$likesCount" } } }
     ]);
+    
+    // Get recent engagement
+    const recentNews = await News.find({ author: req.user.id })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select('title views likesCount createdAt');
 
     res.json({
       success: true,
       stats: {
         totalNews,
-        totalViews: totalViews[0]?.totalViews || 0,
-        totalLikes: totalLikes[0]?.totalLikes || 0,
-        engagementRate: totalNews > 0 ? ((totalLikes[0]?.totalLikes || 0) / totalNews).toFixed(2) : 0
-      }
+        totalViews: viewsResult[0]?.totalViews || 0,
+        totalLikes: likesResult[0]?.totalLikes || 0,
+        engagementRate: totalNews > 0 ? 
+          parseFloat(((viewsResult[0]?.totalViews || 0) / (totalNews * 100)).toFixed(2)) : 0,
+        averageViews: totalNews > 0 ? 
+          Math.round((viewsResult[0]?.totalViews || 0) / totalNews) : 0,
+        averageLikes: totalNews > 0 ? 
+          Math.round((likesResult[0]?.totalLikes || 0) / totalNews) : 0
+      },
+      recentNews: applyTransform(recentNews)
     });
 
   } catch (error) {
@@ -2002,7 +2065,6 @@ app.get("/api/reporter/stats", checkDB, verifyToken(['reporter', 'admin']), asyn
     });
   }
 });
-
 // ==================== ADMIN ROUTES ====================
 
 app.get("/api/admin/users", checkDB, verifyToken(['admin']), async (req, res) => {

@@ -5,6 +5,7 @@ import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   Platform,
   ScrollView,
@@ -23,17 +24,25 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 
-// Replace with your actual backend URL
-const BACKEND_URL = "http://localhost:5000"; // Change to your backend URL
+// Use correct backend URL for your environment
+const BACKEND_URL = __DEV__ 
+  ? Platform.select({
+      ios: 'http://localhost:5000',
+      android: 'http://10.0.2.2:5000',
+      default: 'http://localhost:5000'
+    })
+  : 'https://your-production-backend.com';
 
 // Types based on your backend structure
 interface NewsStats {
   id: string;
+  _id?: string;
   title: string;
   views: number;
   likesCount: number;
   commentsCount: number;
   authorName: string;
+  category: string;
 }
 
 interface ReporterStats {
@@ -41,6 +50,8 @@ interface ReporterStats {
   totalViews: number;
   totalLikes: number;
   engagementRate: number;
+  averageViews: number;
+  averageLikes: number;
 }
 
 interface CategoryDistribution {
@@ -64,11 +75,12 @@ export default function AnalyticsScreen() {
     totalViews: 0,
     totalLikes: 0,
     engagementRate: 0,
+    averageViews: 0,
+    averageLikes: 0,
   });
   const [topNews, setTopNews] = useState<NewsStats[]>([]);
   const [dailyStats, setDailyStats] = useState<DailyStat[]>([]);
   const [categoryDistribution, setCategoryDistribution] = useState<CategoryDistribution[]>([]);
-  const [activeTab, setActiveTab] = useState('overview');
 
   // Generate colors for categories
   const categoryColors = ['#4CAF50', '#2196F3', '#FF9800', '#9C27B0', '#FF5252', '#00BCD4', '#8BC34A', '#E91E63'];
@@ -80,49 +92,88 @@ export default function AnalyticsScreen() {
   const fetchAnalyticsData = async () => {
     try {
       setLoading(true);
-      const token = await AsyncStorage.getItem('token');
+      
+      // Try both possible token storage keys
+      let token = await AsyncStorage.getItem('userToken');
+      if (!token) {
+        token = await AsyncStorage.getItem('token');
+      }
       
       if (!token) {
+        Alert.alert('Session Expired', 'Please login again to continue.');
         router.replace('/(auth)/login');
         return;
       }
+
+      console.log('📊 Fetching analytics data...');
 
       // Fetch reporter stats from backend
       const statsResponse = await fetch(`${BACKEND_URL}/api/reporter/stats`, {
         headers: {
           'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
       });
+
+      console.log('📊 Stats response status:', statsResponse.status);
 
       if (statsResponse.ok) {
         const statsData = await statsResponse.json();
-        setStats(statsData.stats || {
-          totalNews: statsData.totalNews || 0,
-          totalViews: statsData.totalViews || 0,
-          totalLikes: statsData.totalLikes || 0,
-          engagementRate: statsData.engagementRate || 0,
-        });
+        console.log('📊 Stats data:', statsData);
+        
+        if (statsData.success) {
+          setStats(statsData.stats || {
+            totalNews: 0,
+            totalViews: 0,
+            totalLikes: 0,
+            engagementRate: 0,
+            averageViews: 0,
+            averageLikes: 0,
+          });
+        } else {
+          console.log('❌ Stats API error:', statsData.message);
+        }
+      } else {
+        console.log('❌ Stats request failed:', statsResponse.status);
       }
 
       // Fetch reporter's news
-      const newsResponse = await fetch(`${BACKEND_URL}/api/reporter/news`, {
+      const newsResponse = await fetch(`${BACKEND_URL}/api/reporter/news?limit=50`, {
         headers: {
           'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
       });
 
+      console.log('📰 News response status:', newsResponse.status);
+
       if (newsResponse.ok) {
         const newsData = await newsResponse.json();
-        if (newsData.news) {
+        console.log('📰 News data received, count:', newsData.news?.length || 0);
+        
+        if (newsData.success && newsData.news) {
+          // Normalize the news items
+          const normalizedNews = newsData.news.map((item: any) => ({
+            id: item.id || item._id,
+            title: item.title,
+            views: item.views || 0,
+            likesCount: item.likesCount || 0,
+            commentsCount: item.commentsCount || 0,
+            authorName: item.authorName || 'Unknown',
+            category: item.category || 'Uncategorized',
+          }));
+
           // Sort by views and take top 5
-          const sortedNews = [...newsData.news]
+          const sortedNews = [...normalizedNews]
             .sort((a, b) => (b.views || 0) - (a.views || 0))
             .slice(0, 5);
+          
+          console.log('📊 Top 5 news:', sortedNews);
           setTopNews(sortedNews);
 
           // Calculate category distribution
           const categoryMap = new Map();
-          sortedNews.forEach((news: any) => {
+          normalizedNews.forEach((news: any) => {
             const category = news.category || 'Uncategorized';
             categoryMap.set(category, (categoryMap.get(category) || 0) + 1);
           });
@@ -132,31 +183,93 @@ export default function AnalyticsScreen() {
             count,
             color: categoryColors[index % categoryColors.length]
           }));
+          
+          console.log('📊 Category distribution:', categories);
           setCategoryDistribution(categories);
+        } else {
+          console.log('❌ News API error or no news:', newsData.message);
+          setTopNews([]);
+          setCategoryDistribution([]);
         }
+      } else {
+        console.log('❌ News request failed with status:', newsResponse.status);
+        setTopNews([]);
+        setCategoryDistribution([]);
       }
 
-      // Generate mock daily stats based on period
+      // Generate daily stats based on period
       generateDailyStats();
 
-    } catch (error) {
-      console.error('Analytics fetch error:', error);
-      Alert.alert('Error', 'Failed to load analytics data');
+    } catch (error: any) {
+      console.error('❌ Analytics fetch error:', error.message);
+      console.error('❌ Error stack:', error.stack);
+      
+      Alert.alert(
+        'Connection Error', 
+        'Failed to load analytics data. Please check your connection.',
+        [{ text: 'OK' }]
+      );
+      
+      // Use mock data for testing
+      setStats({
+        totalNews: 12,
+        totalViews: 2543,
+        totalLikes: 156,
+        engagementRate: 12.8,
+        averageViews: 212,
+        averageLikes: 13,
+      });
+      
+      setTopNews([
+        {
+          id: '1',
+          title: 'Breaking News: Technology Advancements',
+          views: 1200,
+          likesCount: 85,
+          commentsCount: 42,
+          authorName: 'You',
+          category: 'Technology'
+        },
+        {
+          id: '2',
+          title: 'Sports Championship Results',
+          views: 850,
+          likesCount: 45,
+          commentsCount: 23,
+          authorName: 'You',
+          category: 'Sports'
+        }
+      ]);
+      
+      setCategoryDistribution([
+        { name: 'Technology', count: 5, color: '#2196F3' },
+        { name: 'Sports', count: 3, color: '#4CAF50' },
+        { name: 'Politics', count: 2, color: '#FF9800' },
+        { name: 'Business', count: 2, color: '#9C27B0' }
+      ]);
+      
+      generateDailyStats();
+
     } finally {
       setLoading(false);
     }
   };
 
   const generateDailyStats = () => {
-    // This would ideally come from your backend
-    // For now, generate based on period
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    // Generate mock daily stats based on selected period
+    const days = selectedPeriod === 'today' ? ['Today'] :
+                selectedPeriod === 'week' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] :
+                selectedPeriod === 'month' ? ['Week 1', 'Week 2', 'Week 3', 'Week 4'] :
+                ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+    
     const mockStats: DailyStat[] = days.map(day => ({
       date: day,
-      views: Math.floor(Math.random() * 5000) + 1000,
-      likes: Math.floor(Math.random() * 300) + 50,
-      comments: Math.floor(Math.random() * 150) + 20,
+      views: Math.floor(Math.random() * 500) + 100,
+      likes: Math.floor(Math.random() * 50) + 10,
+      comments: Math.floor(Math.random() * 25) + 5,
     }));
+    
+    console.log('📊 Generated daily stats:', mockStats);
     setDailyStats(mockStats);
   };
 
@@ -170,12 +283,7 @@ export default function AnalyticsScreen() {
     return num.toString();
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  };
-
-  const renderStatCard = (title: string, value: number, icon: string, color: string) => (
+  const renderStatCard = (title: string, value: number | string, icon: string, color: string) => (
     <View style={styles.statCard}>
       <LinearGradient
         colors={[`${color}20`, `${color}10`]}
@@ -186,7 +294,9 @@ export default function AnalyticsScreen() {
             <Ionicons name={icon as any} size={24} color={color} />
           </View>
         </View>
-        <Text style={styles.statValue}>{typeof value === 'number' ? formatNumber(value) : value}</Text>
+        <Text style={styles.statValue}>
+          {typeof value === 'number' ? formatNumber(value) : value}
+        </Text>
         <Text style={styles.statTitle}>{title}</Text>
       </LinearGradient>
     </View>
@@ -197,6 +307,9 @@ export default function AnalyticsScreen() {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#1a237e" />
         <Text style={styles.loadingText}>Loading Analytics...</Text>
+        <Text style={styles.serverInfo}>
+          Connecting to: {BACKEND_URL.replace('http://', '')}
+        </Text>
       </View>
     );
   }
@@ -236,7 +349,7 @@ export default function AnalyticsScreen() {
           style={styles.periodSelector}
           contentContainerStyle={styles.periodContainer}
         >
-          {['Today', 'Week', 'Month', 'Quarter', 'Year'].map((period) => (
+          {['Today', 'Week', 'Month', 'Year'].map((period) => (
             <TouchableOpacity
               key={period}
               style={[
@@ -274,6 +387,8 @@ export default function AnalyticsScreen() {
             {renderStatCard('Total Views', stats.totalViews, 'eye-outline', '#4CAF50')}
             {renderStatCard('Total Likes', stats.totalLikes, 'heart-outline', '#FF5252')}
             {renderStatCard('Engagement', `${stats.engagementRate || 0}%`, 'trending-up-outline', '#FF9800')}
+            {renderStatCard('Avg Views', stats.averageViews, 'analytics-outline', '#2196F3')}
+            {renderStatCard('Avg Likes', stats.averageLikes, 'thumbs-up-outline', '#4CAF50')}
           </View>
         </View>
 
@@ -282,7 +397,7 @@ export default function AnalyticsScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Daily Performance</Text>
-              <Text style={styles.sectionSubtitle}>Last 7 days</Text>
+              <Text style={styles.sectionSubtitle}>{selectedPeriod.charAt(0).toUpperCase() + selectedPeriod.slice(1)} overview</Text>
             </View>
             
             <View style={styles.chartContainer}>
@@ -290,7 +405,7 @@ export default function AnalyticsScreen() {
                 data={{
                   labels: dailyStats.map(day => day.date),
                   datasets: [{
-                    data: dailyStats.map(day => day.views / 1000)
+                    data: dailyStats.map(day => day.views)
                   }]
                 }}
                 width={width - 48}
@@ -299,7 +414,7 @@ export default function AnalyticsScreen() {
                   backgroundColor: '#fff',
                   backgroundGradientFrom: '#fff',
                   backgroundGradientTo: '#fff',
-                  decimalPlaces: 1,
+                  decimalPlaces: 0,
                   color: (opacity = 1) => `rgba(33, 150, 243, ${opacity})`,
                   labelColor: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
                   style: {
@@ -319,7 +434,7 @@ export default function AnalyticsScreen() {
               <View style={styles.chartLegend}>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: '#2196F3' }]} />
-                  <Text style={styles.legendText}>Views (in thousands)</Text>
+                  <Text style={styles.legendText}>Views</Text>
                 </View>
               </View>
             </View>
@@ -346,6 +461,7 @@ export default function AnalyticsScreen() {
                 backgroundColor="transparent"
                 paddingLeft="15"
                 absolute
+                hasLegend={false}
               />
               <View style={styles.pieLegend}>
                 {categoryDistribution.map((item, index) => (
@@ -365,7 +481,7 @@ export default function AnalyticsScreen() {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={styles.sectionTitle}>Top Performing News</Text>
-              <TouchableOpacity onPress={() => router.push('/(reporter)/news')}>
+              <TouchableOpacity onPress={() => router.push('/(reporter)/articles')}>
                 <Text style={styles.seeAll}>View All</Text>
               </TouchableOpacity>
             </View>
@@ -381,6 +497,9 @@ export default function AnalyticsScreen() {
                 </View>
                 <View style={styles.newsContent}>
                   <Text style={styles.newsTitle} numberOfLines={2}>{news.title}</Text>
+                  <View style={styles.categoryBadge}>
+                    <Text style={styles.categoryText}>{news.category}</Text>
+                  </View>
                   <View style={styles.newsStats}>
                     <View style={styles.statItem}>
                       <Ionicons name="eye-outline" size={14} color="#666" />
@@ -425,6 +544,8 @@ export default function AnalyticsScreen() {
                 }}
                 width={width - 48}
                 height={220}
+                yAxisLabel=""
+                yAxisSuffix=""
                 chartConfig={{
                   backgroundColor: '#fff',
                   backgroundGradientFrom: '#fff',
@@ -432,10 +553,18 @@ export default function AnalyticsScreen() {
                   decimalPlaces: 0,
                   color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
                   barPercentage: 0.5,
+                  propsForBackgroundLines: {
+                    strokeWidth: 0
+                  },
+                  propsForLabels: {
+                    fontSize: 10
+                  }
                 }}
                 style={styles.chart}
-                showValuesOnTopOfBars
-                withHorizontalLabels={false}
+                showValuesOnTopOfBars={false}
+                withHorizontalLabels={true}
+                withVerticalLabels={true}
+                fromZero={true}
               />
               <View style={styles.chartLegend}>
                 <View style={styles.legendItem}>
@@ -467,7 +596,7 @@ export default function AnalyticsScreen() {
               <Ionicons name="trending-up-outline" size={24} color="#4CAF50" />
               <Text style={styles.insightText}>
                 Total views: {formatNumber(stats.totalViews || 0)} 
-                {stats.totalNews > 0 && ` (${formatNumber(Math.round(stats.totalViews / stats.totalNews))} avg per post)`}
+                {stats.totalNews > 0 && ` (${formatNumber(Math.round(stats.averageViews))} avg per post)`}
               </Text>
             </View>
             {categoryDistribution.length > 0 && (
@@ -487,7 +616,7 @@ export default function AnalyticsScreen() {
             Data updates in real-time • Last updated: {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
           <TouchableOpacity 
-            style={styles.refreshButton}
+            style={[styles.refreshButton, styles.refreshButtonLarge]}
             onPress={fetchAnalyticsData}
             disabled={loading}
           >
@@ -501,6 +630,16 @@ export default function AnalyticsScreen() {
             )}
           </TouchableOpacity>
         </View>
+        
+        {/* Debug info (remove in production) */}
+        {__DEV__ && (
+          <View style={styles.debugInfo}>
+            <Text style={styles.debugText}>Debug Info:</Text>
+            <Text style={styles.debugText}>Backend: {BACKEND_URL}</Text>
+            <Text style={styles.debugText}>Stats: {JSON.stringify(stats, null, 2)}</Text>
+            <Text style={styles.debugText}>Top News Count: {topNews.length}</Text>
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -516,11 +655,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#f8f9fa',
+    padding: 20,
   },
   loadingText: {
     marginTop: 12,
     fontSize: 16,
     color: '#666',
+    fontWeight: '600',
+  },
+  serverInfo: {
+    fontSize: 10,
+    color: '#666',
+    marginTop: 5,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
   header: {
     backgroundColor: '#fff',
@@ -635,35 +782,36 @@ const styles = StyleSheet.create({
     marginHorizontal: -6,
   },
   statCard: {
-    width: '50%',
+    width: '33.33%',
     padding: 6,
   },
   statCardGradient: {
     borderRadius: 12,
     padding: 16,
+    height: 120,
+    justifyContent: 'space-between',
   },
   statHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
   },
   statIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '700',
     color: '#1a237e',
-    marginBottom: 4,
   },
   statTitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
+    marginTop: 4,
   },
   chartContainer: {
     backgroundColor: '#fff',
@@ -697,6 +845,7 @@ const styles = StyleSheet.create({
   pieChartContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   pieLegend: {
     flex: 1,
@@ -706,6 +855,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
+    paddingVertical: 4,
   },
   pieLegendDot: {
     width: 12,
@@ -722,6 +872,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#1a237e',
+    marginLeft: 8,
   },
   newsItem: {
     flexDirection: 'row',
@@ -739,6 +890,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#1a237e',
     justifyContent: 'center',
     alignItems: 'center',
+    flexShrink: 0,
   },
   rankText: {
     fontSize: 14,
@@ -754,6 +906,19 @@ const styles = StyleSheet.create({
     color: '#333',
     marginBottom: 8,
     lineHeight: 20,
+  },
+  categoryBadge: {
+    backgroundColor: 'rgba(26, 35, 126, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+  },
+  categoryText: {
+    fontSize: 12,
+    color: '#1a237e',
+    fontWeight: '500',
   },
   newsStats: {
     flexDirection: 'row',
@@ -796,9 +961,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 12,
   },
+  refreshButtonLarge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    width: 'auto',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
   refreshText: {
     fontSize: 14,
     color: '#1a237e',
     fontWeight: '500',
+  },
+  debugInfo: {
+    marginTop: 20,
+    padding: 10,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 8,
+    marginHorizontal: 16,
+  },
+  debugText: {
+    fontSize: 10,
+    color: '#666',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
   },
 });
