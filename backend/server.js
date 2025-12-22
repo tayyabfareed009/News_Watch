@@ -2337,6 +2337,7 @@ const seedCategories = async () => {
 };
 
 // ==================== ERROR HANDLING ====================
+// ==================== ERROR HANDLING ====================
 app.use((req, res) => {
   res.status(404).json({ 
     success: false,
@@ -2353,16 +2354,15 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ==================== START SERVER ====================
-// ==================== VERCEl COMPATIBILITY ====================
-// This is CRITICAL for Vercel deployment
+// ==================== EXPORT FOR VERCEL ====================
+// Export the app for Vercel
+module.exports = app;
+
+// ==================== LOCAL DEVELOPMENT ====================
+// Only start the server if running locally
 if (require.main === module) {
-  // Running locally
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
   });
-} else {
-  // Running on Vercel
-  module.exports = app;
 }
