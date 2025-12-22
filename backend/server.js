@@ -11,34 +11,107 @@ const app = express();
 
 // ==================== CORS CONFIGURATION ====================
 app.use(cors({
-  origin: ['http://localhost:8081', 'http://localhost:19006', 'exp://192.168.1.5:19000'],
+  origin: true,
   credentials: true
 }));
+
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // ==================== MONGODB CONNECTION ====================
+//const MONGO_URI = process.env.MONGODB_URI || "mongodb+srv://tayyabfareed:11223344@cluster0.hwkmm79.mongodb.net/newswatch?retryWrites=true&w=majority&appName=Cluster0";
+// ==================== MONGODB CONNECTION FOR VERCEL ====================
 const MONGO_URI = process.env.MONGODB_URI || "mongodb+srv://tayyabfareed:11223344@cluster0.hwkmm79.mongodb.net/newswatch?retryWrites=true&w=majority&appName=Cluster0";
-let dbConnected = false;
 
-mongoose.connect(MONGO_URI)
+// Global connection state
+let dbConnected = false;
+let connectionPromise = null;
+
+async function connectDB() {
+  if (dbConnected && mongoose.connection.readyState === 1) {
+    return true;
+  }
+  
+  // Prevent multiple simultaneous connection attempts
+  if (connectionPromise) {
+    return connectionPromise;
+  }
+  
+  connectionPromise = mongoose.connect(MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 10000,
+    socketTimeoutMS: 45000,
+    connectTimeoutMS: 10000,
+    maxPoolSize: 10,
+    minPoolSize: 1,
+  })
   .then(() => {
     console.log("✅ MongoDB Connected Successfully");
     dbConnected = true;
-  })
-  .catch(err => {
-    console.log("❌ MongoDB Connection Failed:", err.message);
-    dbConnected = false;
-  });
-
-// Simple checkDB middleware
-const checkDB = async (req, res, next) => {
-  if (mongoose.connection.readyState !== 1) {
-    return res.status(503).json({
-      success: false,
-      message: "Database temporarily unavailable"
+    connectionPromise = null;
+    
+    // Connection event handlers
+    mongoose.connection.on('error', (err) => {
+      console.error('MongoDB connection error:', err.message);
+      dbConnected = false;
     });
+    
+    mongoose.connection.on('disconnected', () => {
+      console.log('MongoDB disconnected');
+      dbConnected = false;
+    });
+    
+    mongoose.connection.on('reconnected', () => {
+      console.log('MongoDB reconnected');
+      dbConnected = true;
+    });
+    
+    return true;
+  })
+  .catch((err) => {
+    console.error("❌ MongoDB Connection Failed:", err.message);
+    dbConnected = false;
+    connectionPromise = null;
+    return false;
+  });
+  
+  return connectionPromise;
+}
+
+// Connect on startup (non-blocking for Vercel)
+if (process.env.VERCEL !== '1') {
+  // Only auto-connect if not in Vercel (Vercel will connect on first request)
+  connectDB().then(connected => {
+    if (connected) {
+      console.log("Database ready");
+    } else {
+      console.log("Database connection failed, API will run with limited functionality");
+    }
+  });
+}
+
+// ==================== MIDDLEWARE TO CHECK DB ====================
+const checkDB = async (req, res, next) => {
+  // Check if we already have an active connection
+  if (mongoose.connection.readyState !== 1) {
+    try {
+      const connected = await connectDB();
+      if (!connected) {
+        return res.status(503).json({
+          success: false,
+          message: "Database temporarily unavailable. Please try again.",
+          error: "DB_CONNECTION_FAILED"
+        });
+      }
+    } catch (error) {
+      return res.status(503).json({
+        success: false,
+        message: "Database connection failed",
+        error: error.message
+      });
+    }
   }
   next();
 };
@@ -2281,11 +2354,10 @@ app.use((err, req, res, next) => {
 });
 
 // ==================== START SERVER ====================
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, async () => {
-  console.log(`🚀 NewsWatch Server running on http://localhost:${PORT}`);
-  console.log(`✅ Ready for Cloudinary image URLs from frontend`);
-  
-  // Seed categories on startup
-  await seedCategories();
-});
+module.exports=app;
+if (require.main === module) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+  });
+}
