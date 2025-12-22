@@ -19,7 +19,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // ==================== MONGODB CONNECTION ====================
-const MONGO_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/newswatch";
+const MONGO_URI = process.env.MONGODB_URI || "mongodb+srv://tayyabfareed:11223344@cluster0.hwkmm79.mongodb.net/newswatch?retryWrites=true&w=majority&appName=Cluster0";
 let dbConnected = false;
 
 mongoose.connect(MONGO_URI)
