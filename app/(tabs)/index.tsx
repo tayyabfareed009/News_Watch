@@ -1,4 +1,4 @@
-// app/(tabs)/index.tsx - PROFESSIONAL VERSION
+// app/(tabs)/index.tsx - WITH DEBUG LOGS
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { BlurView } from 'expo-blur';
@@ -24,11 +24,17 @@ import {
 
 const { width, height } = Dimensions.get('window');
 
-// Replace with your actual backend URL - IMPORTANT: Use your local IP for development
-// For Android emulator: 'http://10.0.2.2:5000'
-// For iOS simulator: 'http://localhost:5000'
-// For physical device: 'http://YOUR_LOCAL_IP:5000'
-const BACKEND_URL = "http://localhost:5000"; // Change this to your actual backend URL
+// BACKEND CONFIGURATION
+const BACKEND_URL = __DEV__ 
+  ? Platform.select({
+      ios: 'http://localhost:5000',
+      android: 'http://10.0.2.2:5000',
+      default: 'http://localhost:5000'
+    })
+  : 'https://your-production-backend.com';
+
+console.log('📱 HomeScreen - Backend URL:', BACKEND_URL);
+console.log('📱 HomeScreen - Platform:', Platform.OS);
 
 interface NewsItem {
   id: string;
@@ -67,6 +73,8 @@ interface UserData {
 }
 
 export default function HomeScreen() {
+  console.log('🚀 HomeScreen rendered');
+  
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -95,40 +103,66 @@ export default function HomeScreen() {
   });
 
   useEffect(() => {
+    console.log('🏠 HomeScreen mounted');
+    console.log('📱 Testing router:', typeof router.push);
+    
+    // Test navigation immediately
+    testNavigation();
+    
     loadUserData();
     fetchInitialData();
   }, []);
 
+  const testNavigation = () => {
+    console.log('🧪 Testing navigation capabilities...');
+    console.log('   Router.push function exists:', typeof router.push === 'function');
+    console.log('   Router.replace function exists:', typeof router.replace === 'function');
+    console.log('   Router.back function exists:', typeof router.back === 'function');
+  };
+
   const loadUserData = async () => {
+    console.log('👤 Loading user data...');
     try {
       const token = await AsyncStorage.getItem('userToken');
       const userJson = await AsyncStorage.getItem('user');
       
+      console.log('   Token exists:', !!token);
+      console.log('   User JSON exists:', !!userJson);
+      
       if (token && userJson) {
         const userData: UserData = JSON.parse(userJson);
+        console.log('   Parsed user:', { id: userData.id, name: userData.name });
         setUser(userData);
         
         // Fetch fresh user data
+        console.log('   Fetching fresh user profile...');
         const response = await fetch(`${BACKEND_URL}/api/user/profile`, {
           headers: {
             'Authorization': `Bearer ${token}`,
           },
         });
         
+        console.log('   Profile response status:', response.status);
+        
         if (response.ok) {
           const data = await response.json();
+          console.log('   Profile API success:', data.success);
           if (data.success) {
             setUser(data.user);
             await AsyncStorage.setItem('user', JSON.stringify(data.user));
+            console.log('✅ User data loaded successfully');
           }
+        } else {
+          console.warn('⚠️ Profile fetch failed:', response.status);
         }
       }
     } catch (error) {
-      console.error('Error loading user:', error);
+      console.error('❌ Error loading user:', error);
     }
   };
 
   const fetchInitialData = async () => {
+    console.log('📡 Fetching initial data...');
     try {
       setLoading(true);
       await Promise.all([
@@ -137,8 +171,9 @@ export default function HomeScreen() {
         fetchLatestNews(),
         fetchCategories(),
       ]);
+      console.log('✅ Initial data loaded successfully');
     } catch (error) {
-      console.error('Error fetching initial data:', error);
+      console.error('❌ Error fetching initial data:', error);
       showErrorAlert('Failed to load content. Please check your connection.');
     } finally {
       setLoading(false);
@@ -146,56 +181,105 @@ export default function HomeScreen() {
   };
 
   const fetchBreakingNews = async () => {
+    console.log('⚡ Fetching breaking news...');
     try {
       const response = await fetch(`${BACKEND_URL}/api/news/breaking`);
+      console.log('   Breaking news response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('   Breaking news API success:', data.success);
+        console.log('   Breaking news count:', data.news?.length || 0);
+        
         if (data.success) {
           setBreakingNews(data.news || []);
+          
+          // Log first breaking news item details
+          if (data.news && data.news.length > 0) {
+            const firstNews = data.news[0];
+            console.log('   First breaking news:', {
+              id: firstNews.id,
+              title: firstNews.title,
+              hasId: !!firstNews.id,
+              idType: typeof firstNews.id
+            });
+          }
         }
       }
     } catch (error) {
-      console.error('Error fetching breaking news:', error);
+      console.error('❌ Error fetching breaking news:', error);
     }
   };
 
   const fetchFeaturedNews = async () => {
+    console.log('⭐ Fetching featured news...');
     try {
       const response = await fetch(`${BACKEND_URL}/api/news/featured`);
+      console.log('   Featured news response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('   Featured news API success:', data.success);
+        console.log('   Featured news count:', data.news?.length || 0);
+        
         if (data.success) {
           setFeaturedNews(data.news || []);
         }
       }
     } catch (error) {
-      console.error('Error fetching featured news:', error);
+      console.error('❌ Error fetching featured news:', error);
     }
   };
 
   const fetchLatestNews = async (category?: string) => {
+    console.log('🕒 Fetching latest news...', { category });
     try {
       const url = category && category !== 'all' 
         ? `${BACKEND_URL}/api/categories/${category}/news?limit=10`
         : `${BACKEND_URL}/api/news?limit=10`;
       
+      console.log('   Latest news URL:', url);
+      
       const response = await fetch(url);
+      console.log('   Latest news response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('   Latest news API success:', data.success);
+        console.log('   Latest news count:', data.news?.length || 0);
+        
         if (data.success) {
           setLatestNews(data.news || []);
+          
+          // Log details of first 2 news items
+          if (data.news && data.news.length > 0) {
+            data.news.slice(0, 2).forEach((item: NewsItem, index: number) => {
+              console.log(`   News ${index}:`, {
+                id: item.id,
+                title: item.title.substring(0, 30) + '...',
+                idValid: !!item.id && item.id.length > 0,
+                idLength: item.id?.length || 0
+              });
+            });
+          }
         }
       }
     } catch (error) {
-      console.error('Error fetching latest news:', error);
+      console.error('❌ Error fetching latest news:', error);
     }
   };
 
   const fetchCategories = async () => {
+    console.log('📂 Fetching categories...');
     try {
       const response = await fetch(`${BACKEND_URL}/api/categories`);
+      console.log('   Categories response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('   Categories API success:', data.success);
+        console.log('   Categories count:', data.categories?.length || 0);
+        
         if (data.success) {
           const backendCategories = data.categories.map((cat: any) => ({
             id: cat.id,
@@ -213,8 +297,9 @@ export default function HomeScreen() {
         }
       }
     } catch (error) {
-      console.error('Error fetching categories:', error);
+      console.error('❌ Error fetching categories:', error);
       // Fallback categories
+      console.log('⚠️ Using fallback categories');
       setCategories([
         { id: 'all', name: 'All', icon: 'apps', color: '#1a237e' },
         { id: 'politics', name: 'Politics', icon: 'megaphone', color: '#FF3B30' },
@@ -264,26 +349,32 @@ export default function HomeScreen() {
   const searchNews = async () => {
     if (!searchQuery.trim()) return;
     
+    console.log('🔍 Searching news:', searchQuery);
     try {
       setLoading(true);
       const response = await fetch(
         `${BACKEND_URL}/api/search?q=${encodeURIComponent(searchQuery)}&limit=20`
       );
       
+      console.log('   Search response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
+        console.log('   Search API success:', data.success);
         if (data.success) {
           setLatestNews(data.news || []);
+          console.log('   Search results:', data.news?.length || 0);
         }
       }
     } catch (error) {
-      console.error('Error searching news:', error);
+      console.error('❌ Error searching news:', error);
     } finally {
       setLoading(false);
     }
   };
 
   const handleCategorySelect = useCallback((categoryId: string) => {
+    console.log('🎯 Category selected:', categoryId);
     setSelectedCategory(categoryId);
     setLoading(true);
     fetchLatestNews(categoryId === 'all' ? undefined : categoryId);
@@ -291,9 +382,11 @@ export default function HomeScreen() {
   }, []);
 
   const onRefresh = useCallback(async () => {
+    console.log('🔄 Refreshing data...');
     setRefreshing(true);
     await fetchInitialData();
     setRefreshing(false);
+    console.log('✅ Refresh complete');
   }, []);
 
   const formatTime = (dateString: string): string => {
@@ -307,11 +400,47 @@ export default function HomeScreen() {
     return `${Math.floor(diffInSeconds / 86400)}d ago`;
   };
 
-  const navigateToNewsDetail = (newsId: string) => {
-    router.push(`/news/${newsId}`);
+const navigateToNewsDetail = (newsId: string, newsItem?: NewsItem) => {
+  console.log('🧭 Navigating to news detail:', newsId);
+  
+  // If ID is undefined, try to get it from newsItem
+  if (!newsId || newsId === 'undefined') {
+    if (newsItem) {
+      console.log('🔄 Trying to extract ID from newsItem');
+      if (newsItem._id) {
+        newsId = newsItem._id.toString();
+        console.log('✅ Extracted ID from _id:', newsId);
+      } else if (newsItem.id) {
+        newsId = newsItem.id;
+        console.log('✅ Using existing id:', newsId);
+      }
+    }
+  }
+  
+  if (!newsId || newsId === 'undefined') {
+    console.error('❌ Invalid news ID:', { newsId, newsItem });
+    Alert.alert('Error', 'Cannot open news: Invalid ID');
+    return;
+  }
+  
+  // Navigate
+  router.push({
+    pathname: '/news/[id]',
+    params: { id: newsId }
+  });
+  
+  console.log('✅ Navigation triggered');
+};
+
+
+  // Test navigation with hardcoded ID
+  const testNavigationWithHardcodedId = () => {
+    console.log('🧪 Testing navigation with hardcoded ID: test-123');
+    router.push('/news/test-123');
   };
 
   const navigateToProfile = () => {
+    console.log('👤 Navigating to profile');
     if (user) {
       router.push('/(tabs)/profile');
     } else {
@@ -320,6 +449,7 @@ export default function HomeScreen() {
   };
 
   const toggleSearchBar = () => {
+    console.log('🔍 Toggling search bar:', !showSearchBar);
     Animated.timing(searchBarOpacity, {
       toValue: showSearchBar ? 0 : 1,
       duration: 300,
@@ -329,6 +459,7 @@ export default function HomeScreen() {
   };
 
   const showErrorAlert = (message: string) => {
+    console.log('⚠️ Showing error alert:', message);
     Alert.alert(
       'Error',
       message,
@@ -336,114 +467,155 @@ export default function HomeScreen() {
     );
   };
 
-  const renderBreakingNewsItem = ({ item, index }: { item: NewsItem; index: number }) => (
-    <TouchableOpacity
-      style={styles.breakingNewsCard}
-      onPress={() => navigateToNewsDetail(item.id)}
-      activeOpacity={0.9}
-    >
-      <Image
-        source={{ 
-          uri: item.images?.[0]?.url || `https://picsum.photos/seed/${item.id}/400/300`
+  const renderBreakingNewsItem = ({ item, index }: { item: NewsItem; index: number }) => {
+    console.log(`⚡ Rendering breaking news ${index}:`, { 
+      id: item.id, 
+      title: item.title.substring(0, 20) + '...' 
+    });
+    
+    return (
+      <TouchableOpacity
+        style={styles.breakingNewsCard}
+        onPress={() => {
+          console.log('👆 Breaking news tapped:', {
+            id: item.id,
+            title: item.title,
+            index
+          });//onPress={() => navigateToNewsDetail(item.id, item)}
+          navigateToNewsDetail(item.id, item);
         }}
-        style={styles.breakingNewsImage}
-        resizeMode="cover"
-      />
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.8)']}
-        style={styles.breakingNewsGradient}
+        activeOpacity={0.9}
       >
-        <View style={styles.breakingNewsContent}>
-          <View style={styles.breakingNewsBadge}>
-            <Ionicons name="flash" size={12} color="#FFD700" />
-            <Text style={styles.breakingNewsBadgeText}>BREAKING</Text>
+        <Image
+          source={{ 
+            uri: item.images?.[0]?.url || `https://picsum.photos/seed/${item.id}/400/300`
+          }}
+          style={styles.breakingNewsImage}
+          resizeMode="cover"
+        />
+        <LinearGradient
+          colors={['transparent', 'rgba(0,0,0,0.8)']}
+          style={styles.breakingNewsGradient}
+        >
+          <View style={styles.breakingNewsContent}>
+            <View style={styles.breakingNewsBadge}>
+              <Ionicons name="flash" size={12} color="#FFD700" />
+              <Text style={styles.breakingNewsBadgeText}>BREAKING</Text>
+            </View>
+            <Text style={styles.breakingNewsTitle} numberOfLines={2}>
+              {item.title}
+            </Text>
+            <View style={styles.breakingNewsMeta}>
+              <Text style={styles.breakingNewsSource}>{item.authorName}</Text>
+              <Text style={styles.breakingNewsTime}>{formatTime(item.createdAt)}</Text>
+            </View>
           </View>
-          <Text style={styles.breakingNewsTitle} numberOfLines={2}>
+        </LinearGradient>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderFeaturedNewsItem = ({ item }: { item: NewsItem }) => {
+    console.log(`⭐ Rendering featured news:`, { 
+      id: item.id, 
+      title: item.title.substring(0, 20) + '...' 
+    });
+    
+    return (
+      <TouchableOpacity
+        style={styles.featuredNewsCard}
+        onPress={() => {
+          console.log('👆 Featured news tapped:', {
+            id: item.id,
+            title: item.title
+          });
+          navigateToNewsDetail(item.id);
+        }}
+        activeOpacity={0.9}
+      >
+        <Image
+          source={{ uri: item.images?.[0]?.url || `https://picsum.photos/seed/${item.id}/300/200` }}
+          style={styles.featuredNewsImage}
+          resizeMode="cover"
+        />
+        <View style={styles.featuredNewsContent}>
+          <View style={styles.featuredNewsHeader}>
+            <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(item.category) }]}>
+              <Text style={styles.categoryBadgeText}>{item.category}</Text>
+            </View>
+            <View style={styles.featuredBadge}>
+              <Ionicons name="star" size={10} color="#FFD700" />
+              <Text style={styles.featuredBadgeText}>Featured</Text>
+            </View>
+          </View>
+          <Text style={styles.featuredNewsTitle} numberOfLines={2}>
             {item.title}
           </Text>
-          <View style={styles.breakingNewsMeta}>
-            <Text style={styles.breakingNewsSource}>{item.authorName}</Text>
-            <Text style={styles.breakingNewsTime}>{formatTime(item.createdAt)}</Text>
+          <View style={styles.featuredNewsMeta}>
+            <Text style={styles.featuredNewsSource}>{item.authorName}</Text>
+            <Text style={styles.featuredNewsTime}>{formatTime(item.createdAt)}</Text>
           </View>
         </View>
-      </LinearGradient>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
-  const renderFeaturedNewsItem = ({ item }: { item: NewsItem }) => (
-    <TouchableOpacity
-      style={styles.featuredNewsCard}
-      onPress={() => navigateToNewsDetail(item.id)}
-      activeOpacity={0.9}
-    >
-      <Image
-        source={{ uri: item.images?.[0]?.url || `https://picsum.photos/seed/${item.id}/300/200` }}
-        style={styles.featuredNewsImage}
-        resizeMode="cover"
-      />
-      <View style={styles.featuredNewsContent}>
-        <View style={styles.featuredNewsHeader}>
-          <View style={[styles.categoryBadge, { backgroundColor: getCategoryColor(item.category) }]}>
-            <Text style={styles.categoryBadgeText}>{item.category}</Text>
-          </View>
-          <View style={styles.featuredBadge}>
-            <Ionicons name="star" size={10} color="#FFD700" />
-            <Text style={styles.featuredBadgeText}>Featured</Text>
-          </View>
-        </View>
-        <Text style={styles.featuredNewsTitle} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <View style={styles.featuredNewsMeta}>
-          <Text style={styles.featuredNewsSource}>{item.authorName}</Text>
-          <Text style={styles.featuredNewsTime}>{formatTime(item.createdAt)}</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
-
-  const renderLatestNewsItem = ({ item }: { item: NewsItem }) => (
-    <TouchableOpacity
-      style={styles.latestNewsCard}
-      onPress={() => navigateToNewsDetail(item.id)}
-      activeOpacity={0.9}
-    >
-      <Image
-        source={{ uri: item.images?.[0]?.url || `https://picsum.photos/seed/${item.id}/200/150` }}
-        style={styles.latestNewsImage}
-        resizeMode="cover"
-      />
-      <View style={styles.latestNewsContent}>
-        <Text style={styles.latestNewsTitle} numberOfLines={2}>
-          {item.title}
-        </Text>
-        <Text style={styles.latestNewsExcerpt} numberOfLines={2}>
-          {item.excerpt || item.content.substring(0, 100) + '...'}
-        </Text>
-        <View style={styles.latestNewsMeta}>
-          <View style={[styles.latestCategoryBadge, { backgroundColor: getCategoryColor(item.category) + '20' }]}>
-            <Text style={[styles.latestCategoryText, { color: getCategoryColor(item.category) }]}>
-              {item.category}
-            </Text>
-          </View>
-          <View style={styles.latestNewsStats}>
-            <View style={styles.statItem}>
-              <Ionicons name="eye-outline" size={12} color="#666" />
-              <Text style={styles.statText}>{item.views}</Text>
+  const renderLatestNewsItem = ({ item }: { item: NewsItem }) => {
+    console.log(`🕒 Rendering latest news:`, { 
+      id: item.id, 
+      title: item.title.substring(0, 20) + '...' 
+    });
+    
+    return (
+      <TouchableOpacity
+        style={styles.latestNewsCard}
+        onPress={() => {
+          console.log('👆 Latest news tapped:', {
+            id: item.id,
+            title: item.title,
+            idValid: !!item.id && item.id.length > 0
+          });
+          navigateToNewsDetail(item.id);
+        }}
+        activeOpacity={0.9}
+      >
+        <Image
+          source={{ uri: item.images?.[0]?.url || `https://picsum.photos/seed/${item.id}/200/150` }}
+          style={styles.latestNewsImage}
+          resizeMode="cover"
+        />
+        <View style={styles.latestNewsContent}>
+          <Text style={styles.latestNewsTitle} numberOfLines={2}>
+            {item.title}
+          </Text>
+          <Text style={styles.latestNewsExcerpt} numberOfLines={2}>
+            {item.excerpt || item.content.substring(0, 100) + '...'}
+          </Text>
+          <View style={styles.latestNewsMeta}>
+            <View style={[styles.latestCategoryBadge, { backgroundColor: getCategoryColor(item.category) + '20' }]}>
+              <Text style={[styles.latestCategoryText, { color: getCategoryColor(item.category) }]}>
+                {item.category}
+              </Text>
             </View>
-            <View style={styles.statItem}>
-              <Ionicons name="heart-outline" size={12} color="#666" />
-              <Text style={styles.statText}>{item.likesCount}</Text>
-            </View>
-            <View style={styles.statItem}>
-              <Ionicons name="chatbubble-outline" size={12} color="#666" />
-              <Text style={styles.statText}>{item.commentsCount}</Text>
+            <View style={styles.latestNewsStats}>
+              <View style={styles.statItem}>
+                <Ionicons name="eye-outline" size={12} color="#666" />
+                <Text style={styles.statText}>{item.views}</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Ionicons name="heart-outline" size={12} color="#666" />
+                <Text style={styles.statText}>{item.likesCount}</Text>
+              </View>
+              <View style={styles.statItem}>
+                <Ionicons name="chatbubble-outline" size={12} color="#666" />
+                <Text style={styles.statText}>{item.commentsCount}</Text>
+              </View>
             </View>
           </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   const renderCategoryItem = ({ item }: { item: Category }) => (
     <TouchableOpacity
@@ -476,6 +648,7 @@ export default function HomeScreen() {
   );
 
   if (loading && !refreshing) {
+    console.log('⏳ Showing loading state');
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#1a237e" />
@@ -483,6 +656,13 @@ export default function HomeScreen() {
       </View>
     );
   }
+
+  console.log('🎨 Rendering HomeScreen UI');
+  console.log('   Breaking news count:', breakingNews.length);
+  console.log('   Featured news count:', featuredNews.length);
+  console.log('   Latest news count:', latestNews.length);
+  console.log('   Categories count:', categories.length);
+  console.log('   User logged in:', !!user);
 
   return (
     <View style={styles.container}>
@@ -569,7 +749,10 @@ export default function HomeScreen() {
           {/* Location */}
           <TouchableOpacity 
             style={styles.locationButton}
-            onPress={() => router.push('/locations')}
+            onPress={() => {
+              console.log('📍 Navigating to locations');
+              router.push('/locations');
+            }}
           >
             <Ionicons name="location" size={16} color="#fff" />
             <Text style={styles.locationText}>
@@ -600,6 +783,20 @@ export default function HomeScreen() {
         }
       >
         <View style={styles.contentWrapper}>
+          {/* Test Navigation Button */}
+          <View style={styles.testSection}>
+            <TouchableOpacity 
+              style={styles.testButton}
+              onPress={testNavigationWithHardcodedId}
+            >
+              <Ionicons name="bug" size={20} color="#fff" />
+              <Text style={styles.testButtonText}>Test Navigation</Text>
+            </TouchableOpacity>
+            <Text style={styles.testHint}>
+              Tap this button first to test if navigation works
+            </Text>
+          </View>
+
           {/* Breaking News */}
           {breakingNews.length > 0 && (
             <View style={styles.section}>
@@ -612,7 +809,10 @@ export default function HomeScreen() {
                 </View>
                 <TouchableOpacity 
                   style={styles.seeAllButton}
-                  onPress={() => router.push('/news/breaking')}
+                  onPress={() => {
+                    console.log('📰 Navigating to all breaking news');
+                    router.push('/news/breaking');
+                  }}
                 >
                   <Text style={styles.seeAllText}>See All</Text>
                   <Ionicons name="arrow-forward" size={16} color="#1a237e" />
@@ -622,7 +822,10 @@ export default function HomeScreen() {
               <FlatList
                 data={breakingNews}
                 renderItem={renderBreakingNewsItem}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item) => {
+                  console.log('⚡ Breaking news key:', item.id);
+                  return item.id;
+                }}
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.breakingNewsList}
@@ -646,7 +849,10 @@ export default function HomeScreen() {
             <FlatList
               data={categories}
               renderItem={renderCategoryItem}
-              keyExtractor={(item) => item.id}
+              keyExtractor={(item) => {
+                console.log('📂 Category key:', item.id);
+                return item.id;
+              }}
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.categoriesList}
@@ -666,7 +872,10 @@ export default function HomeScreen() {
                 </View>
                 <TouchableOpacity 
                   style={styles.seeAllButton}
-                  onPress={() => router.push('/news/featured')}
+                  onPress={() => {
+                    console.log('⭐ Navigating to all featured news');
+                    router.push('/news/featured');
+                  }}
                 >
                   <Text style={styles.seeAllText}>See All</Text>
                   <Ionicons name="arrow-forward" size={16} color="#1a237e" />
@@ -676,7 +885,10 @@ export default function HomeScreen() {
               <FlatList
                 data={featuredNews.slice(0, 3)}
                 renderItem={renderFeaturedNewsItem}
-                keyExtractor={(item) => item.id}
+                keyExtractor={(item) => {
+                  console.log('⭐ Featured news key:', item.id);
+                  return item.id;
+                }}
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 contentContainerStyle={styles.featuredNewsList}
@@ -695,7 +907,10 @@ export default function HomeScreen() {
               </View>
               <TouchableOpacity 
                 style={styles.seeAllButton}
-                onPress={() => router.push('/news')}
+                onPress={() => {
+                  console.log('🕒 Navigating to all latest news');
+                  router.push('/news');
+                }}
               >
                 <Text style={styles.seeAllText}>See All</Text>
                 <Ionicons name="arrow-forward" size={16} color="#1a237e" />
@@ -719,6 +934,7 @@ export default function HomeScreen() {
                   <TouchableOpacity 
                     style={styles.clearSearchButton}
                     onPress={() => {
+                      console.log('🗑️ Clearing search');
                       setSearchQuery('');
                       fetchLatestNews();
                     }}
@@ -860,6 +1076,40 @@ const styles = StyleSheet.create({
   },
   contentWrapper: {
     paddingTop: 200, // Matches initial header height
+  },
+  testSection: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    marginHorizontal: 20,
+    marginBottom: 20,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 3,
+  },
+  testButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FF3B30',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 10,
+    marginBottom: 10,
+  },
+  testButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  testHint: {
+    fontSize: 12,
+    color: '#666',
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
   section: {
     backgroundColor: '#fff',

@@ -75,39 +75,38 @@ export default function NewsDetailScreen() {
       console.error('Error loading user:', error);
     }
   };
-
-  const fetchNewsData = async () => {
-    try {
-      setLoading(true);
-      
-      // Fetch news details
-      const response = await fetch(`${BACKEND_URL}/api/news/${id}`);
-      if (response.ok) {
-        const result = await response.json();
-        if (result.success) {
-          const data = result.news;
-          setNewsData(data);
-          setLikeCount(data.likesCount || 0);
-          
-          // Check if current user has liked this news
-          if (user && data.likes) {
-            setIsLiked(data.likes.includes(user.id));
-          }
-
-          // Check if news is in user's favorites
-          await checkIfBookmarked(data.id);
-        }
-      } else {
-        throw new Error('Failed to fetch news');
-      }
-    } catch (error) {
-      console.error('Error fetching news:', error);
-      Alert.alert('Error', 'Failed to load news details');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+const fetchNewsData = async () => {
+  try {
+    setLoading(true);
+    
+    console.log(`Fetching news with ID: ${id}`);
+    console.log(`Backend URL: ${BACKEND_URL}/api/news/${id}`);
+    
+    const response = await fetch(`${BACKEND_URL}/api/news/${id}`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-  };
+    
+    const result = await response.json();
+    console.log("News API response:", result);
+    
+    if (result.success) {
+      const data = result.news;
+      setNewsData(data);
+      // ... rest of your code
+    } else {
+      throw new Error(result.message || "Failed to fetch news");
+    }
+    
+  } catch (error) {
+    console.error("Error fetching news:", error);
+    Alert.alert('Error', `Failed to load news: ${error.message}`);
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+};
 
   const checkIfBookmarked = async (newsId: string) => {
     try {

@@ -1,4 +1,4 @@
-// backend/server.js - FIXED VERSION
+// backend/server.js - COMPLETE FIXED VERSION WITH ALL ROUTES
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
@@ -9,19 +9,19 @@ require("dotenv").config();
 
 const app = express();
 
-// ==================== SIMPLE CORS CONFIGURATION ====================
-// Use simple CORS - this is enough
-app.use(cors());
+// ==================== CORS CONFIGURATION ====================
+app.use(cors({
+  origin: ['http://localhost:8081', 'http://localhost:19006', 'exp://192.168.1.5:19000'],
+  credentials: true
+}));
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // ==================== MONGODB CONNECTION ====================
-// ==================== SIMPLE MONGODB CONNECTION ====================
-const MONGO_URI = process.env.MONGODB_URI;
+const MONGO_URI = process.env.MONGODB_URI || "mongodb://localhost:27017/newswatch";
 let dbConnected = false;
 
-// Simple connection - no complex error handling
 mongoose.connect(MONGO_URI)
   .then(() => {
     console.log("✅ MongoDB Connected Successfully");
@@ -228,25 +228,82 @@ const locationSchema = new mongoose.Schema({
   }
 }, { timestamps: true });
 
+const otpSchema = new mongoose.Schema({
+  email: {
+    type: String,
+    required: true,
+    lowercase: true,
+    trim: true
+  },
+  otp: {
+    type: String,
+    required: true
+  },
+  type: {
+    type: String,
+    enum: ['verification', 'reset_password'],
+    default: 'verification'
+  },
+  expiresAt: {
+    type: Date,
+    required: true
+  },
+  attempts: {
+    type: Number,
+    default: 0
+  },
+  verified: {
+    type: Boolean,
+    default: false
+  }
+}, { timestamps: true });
+
+// Auto delete expired OTPs after 10 minutes
+otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 600 });
+
 const User = mongoose.model("User", userSchema);
 const News = mongoose.model("News", newsSchema);
 const Comment = mongoose.model("Comment", commentSchema);
 const Category = mongoose.model("Category", categorySchema);
 const Location = mongoose.model("Location", locationSchema);
+const OTP = mongoose.model("OTP", otpSchema);
 
-// Auto convert _id → id
-[userSchema, newsSchema, commentSchema, categorySchema, locationSchema].forEach(schema => {
-  schema.set("toJSON", {
-    transform: (doc, ret) => {
-      ret.id = ret._id.toString();
-      delete ret._id;
-      delete ret.__v;
-      return ret;
-    }
-  });
-});
+// ==================== FIX: Transform function that works with lean() ====================
+const applyTransform = (doc) => {
+  if (!doc) return doc;
+  
+  if (Array.isArray(doc)) {
+    return doc.map(item => applyTransform(item));
+  }
+  
+  const obj = doc.toObject ? doc.toObject() : doc;
+  
+  // Transform _id to id
+  if (obj._id) {
+    obj.id = obj._id.toString();
+    delete obj._id;
+  }
+  
+  // Remove __v
+  delete obj.__v;
+  
+  // Transform nested objects
+  if (obj.author && obj.author._id) {
+    obj.author.id = obj.author._id.toString();
+    delete obj.author._id;
+  }
+  
+  // Transform likes array
+  if (obj.likes && Array.isArray(obj.likes)) {
+    obj.likes = obj.likes.map(like => like.toString ? like.toString() : like);
+  }
+  
+  return obj;
+};
 
 // ==================== TOKEN VERIFICATION MIDDLEWARE ====================
+const JWT_SECRET = process.env.JWT_SECRET || "newswatch_secret_key";
+
 const verifyToken = (allowedRoles = []) => (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ 
@@ -254,7 +311,7 @@ const verifyToken = (allowedRoles = []) => (req, res, next) => {
     message: "Access denied. No token provided." 
   });
 
-  jwt.verify(token, process.env.JWT_SECRET || "newswatch_secret_key", (err, decoded) => {
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
     if (err) return res.status(401).json({ 
       success: false,
       message: "Invalid token" 
@@ -271,6 +328,19 @@ const verifyToken = (allowedRoles = []) => (req, res, next) => {
     next();
   });
 };
+
+// ==================== OTP UTILITY FUNCTIONS ====================
+const generateOTP = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+const sendOTPEmail = async (email, otp, type = 'verification') => {
+  console.log(`📧 [DEV] ${type.toUpperCase()} OTP for ${email}: ${otp}`);
+  console.log(`⏰ OTP expires in 10 minutes`);
+  return true;
+};
+
+const otpStore = new Map();
 
 // ==================== ROUTES ====================
 
@@ -323,57 +393,6 @@ app.get("/api/test-db", async (req, res) => {
   }
 });
 
-// ==================== OTP SCHEMA ====================
-const otpSchema = new mongoose.Schema({
-  email: {
-    type: String,
-    required: true,
-    lowercase: true,
-    trim: true
-  },
-  otp: {
-    type: String,
-    required: true
-  },
-  type: {
-    type: String,
-    enum: ['verification', 'reset_password'],
-    default: 'verification'
-  },
-  expiresAt: {
-    type: Date,
-    required: true
-  },
-  attempts: {
-    type: Number,
-    default: 0
-  },
-  verified: {
-    type: Boolean,
-    default: false
-  }
-}, { timestamps: true });
-
-// Auto delete expired OTPs after 10 minutes
-otpSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 600 });
-
-const OTP = mongoose.model("OTP", otpSchema);
-
-// ==================== OTP UTILITY FUNCTIONS ====================
-const generateOTP = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-};
-
-// For development - just log OTP to console
-const sendOTPEmail = async (email, otp, type = 'verification') => {
-  console.log(`📧 [DEV] ${type.toUpperCase()} OTP for ${email}: ${otp}`);
-  console.log(`⏰ OTP expires in 10 minutes`);
-  return true;
-};
-
-// Store OTPs in memory for easy testing (optional)
-const otpStore = new Map();
-
 // ==================== OTP ROUTES ====================
 
 // Send OTP for email verification
@@ -392,7 +411,7 @@ app.post("/api/auth/send-verification", checkDB, async (req, res) => {
 
     // Generate OTP
     const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     // Delete any existing OTPs for this email
     await OTP.deleteMany({ 
@@ -423,8 +442,8 @@ app.post("/api/auth/send-verification", checkDB, async (req, res) => {
     res.json({
       success: true,
       message: "Verification code generated",
-      otp: otp, // Send OTP in response for development
-      expiresIn: 600, // 10 minutes in seconds
+      otp: otp,
+      expiresIn: 600,
       note: "DEV MODE: OTP shown in response"
     });
 
@@ -436,93 +455,7 @@ app.post("/api/auth/send-verification", checkDB, async (req, res) => {
     });
   }
 });
-// Add this in your backend routes section (around line 300)
-app.get("/api/auth/verify", verifyToken(), async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id).select('-password');
-    
-    if (!user) {
-      return res.status(404).json({ 
-        success: false,
-        message: "User not found" 
-      });
-    }
 
-    // Check if token is about to expire (within 1 hour)
-    const tokenExp = req.user.exp * 1000;
-    const oneHour = 60 * 60 * 1000;
-    const needsRefresh = (tokenExp - Date.now()) < oneHour;
-
-    res.json({
-      success: true,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        profileImage: user.profileImage,
-        isVerified: user.isVerified
-      },
-      tokenInfo: {
-        expiresAt: tokenExp,
-        needsRefresh,
-        role: req.user.role
-      }
-    });
-
-  } catch (error) {
-    console.error("Token verification error:", error);
-    res.status(401).json({ 
-      success: false,
-      message: "Invalid token" 
-    });
-  }
-});
-
-// Add token refresh endpoint
-app.post("/api/auth/refresh", verifyToken(), async (req, res) => {
-  try {
-    const user = await User.findById(req.user.id);
-    
-    if (!user) {
-      return res.status(404).json({ 
-        success: false,
-        message: "User not found" 
-      });
-    }
-
-    // Generate new token
-    const newToken = jwt.sign(
-      { 
-        id: user.id, 
-        email: user.email, 
-        role: user.role 
-      },
-      process.env.JWT_SECRET || "newswatch_secret_key",
-      { expiresIn: '7d' }
-    );
-
-    res.json({
-      success: true,
-      token: newToken,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        profileImage: user.profileImage,
-        isVerified: user.isVerified
-      }
-    });
-
-  } catch (error) {
-    console.error("Token refresh error:", error);
-    res.status(500).json({ 
-      success: false,
-      message: "Failed to refresh token" 
-    });
-  }
-});
 // Verify OTP
 app.post("/api/auth/verify-otp", checkDB, async (req, res) => {
   try {
@@ -540,25 +473,21 @@ app.post("/api/auth/verify-otp", checkDB, async (req, res) => {
     // Try memory store first (for testing)
     const memoryOtp = otpStore.get(normalizedEmail);
     if (memoryOtp && memoryOtp.otp === otp && memoryOtp.expiresAt > new Date()) {
-      // OTP valid from memory store
       otpStore.delete(normalizedEmail);
       
-      // Find or create user
       let user = await User.findOne({ email: normalizedEmail });
       
       if (user) {
-        // Update user verification status
         user.isVerified = true;
         await user.save();
         
-        // Generate token
         const token = jwt.sign(
           { 
             id: user.id, 
             email: user.email, 
             role: user.role 
           },
-          process.env.JWT_SECRET || "newswatch_secret_key",
+          JWT_SECRET,
           { expiresIn: '7d' }
         );
 
@@ -576,7 +505,6 @@ app.post("/api/auth/verify-otp", checkDB, async (req, res) => {
           }
         });
       } else {
-        // User not found (shouldn't happen in normal flow)
         return res.json({
           success: true,
           message: "OTP verified successfully",
@@ -601,7 +529,6 @@ app.post("/api/auth/verify-otp", checkDB, async (req, res) => {
       });
     }
 
-    // Check if OTP is expired
     if (otpRecord.expiresAt < new Date()) {
       return res.status(400).json({ 
         success: false, 
@@ -609,11 +536,9 @@ app.post("/api/auth/verify-otp", checkDB, async (req, res) => {
       });
     }
 
-    // Mark OTP as verified
     otpRecord.verified = true;
     await otpRecord.save();
 
-    // Find user
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(404).json({ 
@@ -622,17 +547,14 @@ app.post("/api/auth/verify-otp", checkDB, async (req, res) => {
       });
     }
 
-    // Update user verification status
     user.isVerified = true;
     await user.save();
 
-    // Generate token
     const token = jwt.sign(
-  { id: user._id, role: user.role },
-  process.env.JWT_SECRET_NEWS,
-  { expiresIn: "1d" }
-);
-
+      { id: user.id, role: user.role },
+      JWT_SECRET,
+      { expiresIn: "1d" }
+    );
 
     res.json({
       success: true,
@@ -671,18 +593,15 @@ app.post("/api/auth/resend-otp", checkDB, async (req, res) => {
 
     const normalizedEmail = email.toLowerCase();
 
-    // Generate new OTP
     const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Delete any existing OTPs
     await OTP.deleteMany({ 
       email: normalizedEmail, 
       type,
       verified: false 
     });
 
-    // Save new OTP
     await OTP.create({
       email: normalizedEmail,
       otp,
@@ -690,7 +609,6 @@ app.post("/api/auth/resend-otp", checkDB, async (req, res) => {
       expiresAt
     });
 
-    // Update memory store
     otpStore.set(normalizedEmail, {
       otp,
       expiresAt,
@@ -702,7 +620,7 @@ app.post("/api/auth/resend-otp", checkDB, async (req, res) => {
     res.json({
       success: true,
       message: "New verification code generated",
-      otp: otp, // Send in response for development
+      otp: otp,
       expiresIn: 600,
       note: "DEV MODE: OTP shown in response"
     });
@@ -716,9 +634,94 @@ app.post("/api/auth/resend-otp", checkDB, async (req, res) => {
   }
 });
 
+// Token verification endpoint
+app.get("/api/auth/verify", verifyToken(), async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password');
+    
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: "User not found" 
+      });
+    }
+
+    const tokenExp = req.user.exp * 1000;
+    const oneHour = 60 * 60 * 1000;
+    const needsRefresh = (tokenExp - Date.now()) < oneHour;
+
+    res.json({
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        profileImage: user.profileImage,
+        isVerified: user.isVerified
+      },
+      tokenInfo: {
+        expiresAt: tokenExp,
+        needsRefresh,
+        role: req.user.role
+      }
+    });
+
+  } catch (error) {
+    console.error("Token verification error:", error);
+    res.status(401).json({ 
+      success: false,
+      message: "Invalid token" 
+    });
+  }
+});
+
+// Token refresh endpoint
+app.post("/api/auth/refresh", verifyToken(), async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    
+    if (!user) {
+      return res.status(404).json({ 
+        success: false,
+        message: "User not found" 
+      });
+    }
+
+    const newToken = jwt.sign(
+      { 
+        id: user.id, 
+        email: user.email, 
+        role: user.role 
+      },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      success: true,
+      token: newToken,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        profileImage: user.profileImage,
+        isVerified: user.isVerified
+      }
+    });
+
+  } catch (error) {
+    console.error("Token refresh error:", error);
+    res.status(500).json({ 
+      success: false,
+      message: "Failed to refresh token" 
+    });
+  }
+});
+
 // ==================== FORGOT PASSWORD ====================
 
-// Request password reset OTP
 app.post("/api/auth/forgot-password", checkDB, async (req, res) => {
   try {
     const { email } = req.body;
@@ -732,27 +735,22 @@ app.post("/api/auth/forgot-password", checkDB, async (req, res) => {
 
     const normalizedEmail = email.toLowerCase();
 
-    // Check if user exists
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
-      // For security, don't reveal if user exists
       return res.json({
         success: true,
         message: "If an account exists with this email, a reset code will be generated"
       });
     }
 
-    // Generate OTP
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    // Delete any existing reset OTPs
     await OTP.deleteMany({ 
       email: normalizedEmail, 
       type: 'reset_password' 
     });
 
-    // Save new OTP
     await OTP.create({
       email: normalizedEmail,
       otp,
@@ -760,7 +758,6 @@ app.post("/api/auth/forgot-password", checkDB, async (req, res) => {
       expiresAt
     });
 
-    // Update memory store
     otpStore.set(normalizedEmail, {
       otp,
       expiresAt,
@@ -772,7 +769,7 @@ app.post("/api/auth/forgot-password", checkDB, async (req, res) => {
     res.json({
       success: true,
       message: "Password reset code generated",
-      otp: otp, // Send in response for development
+      otp: otp,
       expiresIn: 600,
       note: "DEV MODE: OTP shown in response"
     });
@@ -786,7 +783,6 @@ app.post("/api/auth/forgot-password", checkDB, async (req, res) => {
   }
 });
 
-// Reset password with OTP
 app.post("/api/auth/reset-password", checkDB, async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body;
@@ -807,14 +803,11 @@ app.post("/api/auth/reset-password", checkDB, async (req, res) => {
 
     const normalizedEmail = email.toLowerCase();
 
-    // Try memory store
     const memoryOtp = otpStore.get(normalizedEmail);
     if (memoryOtp && memoryOtp.type === 'reset_password' && memoryOtp.otp === otp) {
       if (memoryOtp.expiresAt > new Date()) {
-        // Valid OTP from memory
         otpStore.delete(normalizedEmail);
         
-        // Update user password
         const user = await User.findOne({ email: normalizedEmail });
         if (!user) {
           return res.status(404).json({ 
@@ -834,7 +827,6 @@ app.post("/api/auth/reset-password", checkDB, async (req, res) => {
       }
     }
 
-    // Check database OTP
     const otpRecord = await OTP.findOne({ 
       email: normalizedEmail, 
       otp, 
@@ -856,11 +848,9 @@ app.post("/api/auth/reset-password", checkDB, async (req, res) => {
       });
     }
 
-    // Mark OTP as verified
     otpRecord.verified = true;
     await otpRecord.save();
 
-    // Update user password
     const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(404).json({ 
@@ -889,7 +879,6 @@ app.post("/api/auth/reset-password", checkDB, async (req, res) => {
 
 // ==================== TEST ENDPOINTS ====================
 
-// Get all OTPs for testing (development only)
 app.get("/api/test/otps", async (req, res) => {
   try {
     const otps = await OTP.find();
@@ -909,7 +898,6 @@ app.get("/api/test/otps", async (req, res) => {
   }
 });
 
-// Clear all OTPs (development only)
 app.delete("/api/test/clear-otps", async (req, res) => {
   try {
     await OTP.deleteMany({});
@@ -925,7 +913,6 @@ app.delete("/api/test/clear-otps", async (req, res) => {
 
 // ==================== AUTH ROUTES ====================
 
-// Register user directly (no OTP required for now)
 app.post("/api/auth/register", checkDB, [
   body('name').notEmpty().withMessage('Name is required').trim(),
   body('email').isEmail().withMessage('Valid email is required').normalizeEmail(),
@@ -940,7 +927,6 @@ app.post("/api/auth/register", checkDB, [
       role: req.body.role
     });
 
-    // Validate request
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       console.log('❌ [Register] Validation errors:', errors.array());
@@ -959,7 +945,6 @@ app.post("/api/auth/register", checkDB, [
 
     console.log('🔍 [Register] Checking if user exists:', normalizedEmail);
     
-    // Check if user already exists
     const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       console.log('❌ [Register] Email already registered:', normalizedEmail);
@@ -972,17 +957,15 @@ app.post("/api/auth/register", checkDB, [
 
     console.log('✅ [Register] Creating new user...');
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
     const user = await User.create({
       name: name.trim(),
       email: normalizedEmail,
       password: hashedPassword,
       phone: (phone || "").trim(),
       role: role,
-      isVerified: true // Auto-verify for simplicity
+      isVerified: true
     });
 
     console.log('✅ [Register] User created successfully:', {
@@ -992,14 +975,13 @@ app.post("/api/auth/register", checkDB, [
       role: user.role
     });
 
-    // Generate JWT token
     const token = jwt.sign(
       { 
         id: user.id, 
         email: user.email, 
         role: user.role 
       },
-      process.env.JWT_SECRET || "newswatch_secret_key",
+      JWT_SECRET,
       { expiresIn: '7d' }
     );
 
@@ -1031,7 +1013,6 @@ app.post("/api/auth/register", checkDB, [
   }
 });
 
-// Login with detailed logging
 app.post("/api/auth/login", checkDB, [
   body('email').isEmail().normalizeEmail(),
   body('password').notEmpty()
@@ -1092,7 +1073,7 @@ app.post("/api/auth/login", checkDB, [
         email: user.email, 
         role: user.role 
       },
-      process.env.JWT_SECRET || "newswatch_secret_key",
+      JWT_SECRET,
       { expiresIn: '7d' }
     );
 
@@ -1125,7 +1106,6 @@ app.post("/api/auth/login", checkDB, [
   }
 });
 
-// Get user profile
 app.get("/api/user/profile", checkDB, verifyToken(), async (req, res) => {
   try {
     const user = await User.findById(req.user.id)
@@ -1153,7 +1133,6 @@ app.get("/api/user/profile", checkDB, verifyToken(), async (req, res) => {
   }
 });
 
-// Update user profile
 app.put("/api/user/profile", checkDB, verifyToken(), async (req, res) => {
   try {
     const updates = req.body;
@@ -1185,7 +1164,6 @@ app.put("/api/user/profile", checkDB, verifyToken(), async (req, res) => {
 
 // ==================== NEWS ROUTES ====================
 
-// Get all news
 app.get("/api/news", checkDB, async (req, res) => {
   try {
     const { 
@@ -1218,14 +1196,15 @@ app.get("/api/news", checkDB, async (req, res) => {
       .populate('author', 'name profileImage')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
+      .limit(parseInt(limit));
 
     const total = await News.countDocuments(query);
 
+    const transformedNews = applyTransform(news);
+
     res.json({
       success: true,
-      news,
+      news: transformedNews,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -1244,7 +1223,6 @@ app.get("/api/news", checkDB, async (req, res) => {
   }
 });
 
-// Get breaking news
 app.get("/api/news/breaking", checkDB, async (req, res) => {
   try {
     const breakingNews = await News.find({ 
@@ -1253,12 +1231,13 @@ app.get("/api/news/breaking", checkDB, async (req, res) => {
     })
       .populate('author', 'name profileImage')
       .sort({ createdAt: -1 })
-      .limit(10)
-      .lean();
+      .limit(10);
+
+    const transformedNews = applyTransform(breakingNews);
 
     res.json({
       success: true,
-      news: breakingNews
+      news: transformedNews
     });
 
   } catch (error) {
@@ -1271,7 +1250,6 @@ app.get("/api/news/breaking", checkDB, async (req, res) => {
   }
 });
 
-// Get featured news
 app.get("/api/news/featured", checkDB, async (req, res) => {
   try {
     const featuredNews = await News.find({ 
@@ -1280,12 +1258,13 @@ app.get("/api/news/featured", checkDB, async (req, res) => {
     })
       .populate('author', 'name profileImage')
       .sort({ createdAt: -1 })
-      .limit(10)
-      .lean();
+      .limit(10);
+
+    const transformedNews = applyTransform(featuredNews);
 
     res.json({
       success: true,
-      news: featuredNews
+      news: transformedNews
     });
 
   } catch (error) {
@@ -1298,13 +1277,11 @@ app.get("/api/news/featured", checkDB, async (req, res) => {
   }
 });
 
-// Get single news by ID
 app.get("/api/news/:id", checkDB, async (req, res) => {
   try {
     const news = await News.findById(req.params.id)
-      .populate('author', 'name profileImage bio')
-      .lean();
-
+      .populate('author', 'name profileImage bio');
+      
     if (!news || news.status !== 'published') {
       return res.status(404).json({ 
         success: false,
@@ -1314,9 +1291,11 @@ app.get("/api/news/:id", checkDB, async (req, res) => {
 
     await News.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } });
 
+    const transformedNews = applyTransform(news);
+
     res.json({
       success: true,
-      news
+      news: transformedNews
     });
 
   } catch (error) {
@@ -1328,85 +1307,170 @@ app.get("/api/news/:id", checkDB, async (req, res) => {
     });
   }
 });
-
-// Create news (Reporter/Admin only) - CLOUDINARY COMPATIBLE
 app.post("/api/news", checkDB, verifyToken(['reporter', 'admin']), async (req, res) => {
   try {
+    console.log('📝 [Create News] Request received:', {
+      body: {
+        ...req.body,
+        contentPreview: req.body.content ? req.body.content.substring(0, 100) + '...' : 'No content',
+        images: req.body.images ? `Array with ${req.body.images.length} items` : 'No images'
+      },
+      user: req.user
+    });
+
     const { 
       title, 
       content, 
       category, 
-      tags, 
-      videoLink, 
-      images, // ✅ This will receive Cloudinary URLs from frontend
-      isBreaking, 
-      isFeatured,
-      location 
+      tags = [], 
+      videoLink = '', 
+      images = [],
+      isBreaking = false, 
+      isFeatured = false,
+      location = '' 
     } = req.body;
 
-    if (!title || !content || !category) {
+    // Validation
+    if (!title || !title.trim()) {
+      console.log('❌ [Create News] Validation failed: Title is required');
       return res.status(400).json({ 
         success: false,
-        message: "Title, content, and category are required" 
+        message: "Title is required" 
       });
     }
 
+    if (!content || !content.trim()) {
+      console.log('❌ [Create News] Validation failed: Content is required');
+      return res.status(400).json({ 
+        success: false,
+        message: "Content is required" 
+      });
+    }
+
+    if (!category || !category.trim()) {
+      console.log('❌ [Create News] Validation failed: Category is required');
+      return res.status(400).json({ 
+        success: false,
+        message: "Category is required" 
+      });
+    }
+
+    console.log('✅ [Create News] Validation passed');
+
+    // Get user info
     const user = await User.findById(req.user.id);
     if (!user) {
+      console.log('❌ [Create News] User not found:', req.user.id);
       return res.status(404).json({ 
         success: false,
         message: "User not found" 
       });
     }
 
-    // Optional: Validate Cloudinary URLs format
-    if (images && Array.isArray(images)) {
-      for (let i = 0; i < images.length; i++) {
-        const img = images[i];
-        if (!img.url || typeof img.url !== 'string') {
-          return res.status(400).json({
-            success: false,
-            message: `Image at index ${i} must have a valid URL string`
-          });
-        }
-      }
-    }
-
-    const news = await News.create({
-      title,
-      content,
-      excerpt: content.substring(0, 200) + (content.length > 200 ? '...' : ''),
-      category,
-      tags: tags || [],
-      videoLink: videoLink || '',
-      images: images || [], // ✅ Cloudinary URLs stored directly
-      author: req.user.id,
-      authorName: user.name,
-      location: location || user.location || '',
-      isBreaking: isBreaking || false,
-      isFeatured: isFeatured || false,
-      status: 'published'
+    console.log('👤 [Create News] Author:', {
+      id: user.id,
+      name: user.name,
+      role: user.role
     });
 
-    console.log(`✅ News created with ${news.images.length} Cloudinary images`);
+    // Validate images array
+    let validatedImages = [];
+    if (Array.isArray(images)) {
+      validatedImages = images.filter(img => {
+        if (!img || typeof img !== 'object') {
+          console.log('⚠️ [Create News] Skipping invalid image (not an object):', img);
+          return false;
+        }
+        
+        if (!img.url || typeof img.url !== 'string') {
+          console.log('⚠️ [Create News] Skipping image without valid URL:', img);
+          return false;
+        }
+
+        // Ensure URL is a string and not a Buffer or other object
+        const url = String(img.url).trim();
+        if (!url.startsWith('http')) {
+          console.log('⚠️ [Create News] Skipping non-URL image:', url);
+          return false;
+        }
+
+        return true;
+      }).map(img => ({
+        url: String(img.url).trim(),
+        caption: img.caption && typeof img.caption === 'string' ? img.caption.trim() : 'Featured Image'
+      }));
+    }
+
+    console.log('🖼️ [Create News] Validated images:', {
+      count: validatedImages.length,
+      images: validatedImages.map(img => ({
+        urlPreview: img.url.substring(0, 50) + '...',
+        caption: img.caption
+      }))
+    });
+
+    // Create the news article
+    const newsData = {
+      title: title.trim(),
+      content: content.trim(),
+      excerpt: content.trim().substring(0, 200) + (content.length > 200 ? '...' : ''),
+      category: category.trim(),
+      tags: Array.isArray(tags) ? tags.map(tag => String(tag).trim()) : [],
+      videoLink: String(videoLink || '').trim(),
+      images: validatedImages,
+      author: req.user.id,
+      authorName: user.name,
+      location: (location || user.location || '').trim(),
+      isBreaking: Boolean(isBreaking),
+      isFeatured: Boolean(isFeatured),
+      status: 'published',
+      views: 0,
+      likesCount: 0,
+      commentsCount: 0,
+      likes: []
+    };
+
+    console.log('📋 [Create News] Creating news with data:', {
+      ...newsData,
+      content: newsData.content.substring(0, 100) + '...',
+      tags: newsData.tags,
+      imagesCount: newsData.images.length
+    });
+
+    const news = await News.create(newsData);
+
+    console.log('✅ [Create News] News created successfully:', {
+      id: news.id,
+      title: news.title,
+      category: news.category,
+      imagesCount: news.images.length
+    });
+
+    // Populate author info
+    const populatedNews = await News.findById(news._id)
+      .populate('author', 'name profileImage');
 
     res.status(201).json({
       success: true,
       message: "News published successfully",
-      news
+      news: applyTransform(populatedNews)
     });
 
   } catch (error) {
-    console.error("Create news error:", error);
+    console.error('❌ [Create News] Server error:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    });
+    
     res.status(500).json({ 
       success: false,
       message: "Server error",
-      error: error.message 
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
 
-// Update news
 app.put("/api/news/:id", checkDB, verifyToken(['reporter', 'admin']), async (req, res) => {
   try {
     const news = await News.findById(req.params.id);
@@ -1437,7 +1501,7 @@ app.put("/api/news/:id", checkDB, verifyToken(['reporter', 'admin']), async (req
     res.json({
       success: true,
       message: "News updated successfully",
-      news: updatedNews
+      news: applyTransform(updatedNews)
     });
 
   } catch (error) {
@@ -1450,7 +1514,6 @@ app.put("/api/news/:id", checkDB, verifyToken(['reporter', 'admin']), async (req
   }
 });
 
-// Delete news
 app.delete("/api/news/:id", checkDB, verifyToken(['reporter', 'admin']), async (req, res) => {
   try {
     const news = await News.findById(req.params.id);
@@ -1487,7 +1550,6 @@ app.delete("/api/news/:id", checkDB, verifyToken(['reporter', 'admin']), async (
   }
 });
 
-// Like/Unlike news
 app.post("/api/news/:id/like", checkDB, verifyToken(), async (req, res) => {
   try {
     const news = await News.findById(req.params.id);
@@ -1499,7 +1561,10 @@ app.post("/api/news/:id/like", checkDB, verifyToken(), async (req, res) => {
     }
 
     const userId = req.user.id;
-    const hasLiked = news.likes.includes(userId);
+    
+    const hasLiked = news.likes.some(likeId => 
+      likeId.toString() === userId
+    );
 
     if (hasLiked) {
       news.likes.pull(userId);
@@ -1528,7 +1593,6 @@ app.post("/api/news/:id/like", checkDB, verifyToken(), async (req, res) => {
   }
 });
 
-// Add to favorites
 app.post("/api/news/:id/favorite", checkDB, verifyToken(), async (req, res) => {
   try {
     const news = await News.findById(req.params.id);
@@ -1540,7 +1604,10 @@ app.post("/api/news/:id/favorite", checkDB, verifyToken(), async (req, res) => {
     }
 
     const user = await User.findById(req.user.id);
-    const isFavorited = user.favorites.includes(req.params.id);
+    
+    const isFavorited = user.favorites.some(favId => 
+      favId.toString() === req.params.id
+    );
 
     if (isFavorited) {
       user.favorites.pull(req.params.id);
@@ -1566,7 +1633,6 @@ app.post("/api/news/:id/favorite", checkDB, verifyToken(), async (req, res) => {
   }
 });
 
-// Get user's favorite news
 app.get("/api/user/favorites", checkDB, verifyToken(), async (req, res) => {
   try {
     const user = await User.findById(req.user.id).populate({
@@ -1579,7 +1645,7 @@ app.get("/api/user/favorites", checkDB, verifyToken(), async (req, res) => {
 
     res.json({
       success: true,
-      favorites: user.favorites || []
+      favorites: applyTransform(user.favorites) || []
     });
 
   } catch (error) {
@@ -1594,7 +1660,6 @@ app.get("/api/user/favorites", checkDB, verifyToken(), async (req, res) => {
 
 // ==================== COMMENT ROUTES ====================
 
-// Get comments for news
 app.get("/api/news/:id/comments", checkDB, async (req, res) => {
   try {
     const comments = await Comment.find({ 
@@ -1602,12 +1667,11 @@ app.get("/api/news/:id/comments", checkDB, async (req, res) => {
       parentComment: null 
     })
       .populate('user', 'name profileImage')
-      .sort({ createdAt: -1 })
-      .lean();
+      .sort({ createdAt: -1 });
 
     res.json({
       success: true,
-      comments
+      comments: applyTransform(comments)
     });
 
   } catch (error) {
@@ -1620,7 +1684,6 @@ app.get("/api/news/:id/comments", checkDB, async (req, res) => {
   }
 });
 
-// Add comment
 app.post("/api/news/:id/comments", checkDB, verifyToken(), async (req, res) => {
   try {
     const { content, parentComment } = req.body;
@@ -1657,14 +1720,14 @@ app.post("/api/news/:id/comments", checkDB, verifyToken(), async (req, res) => {
     res.status(201).json({
       success: true,
       message: "Comment added",
-      comment: {
-        ...comment.toJSON(),
+      comment: applyTransform({
+        ...comment.toObject(),
         user: {
           id: user.id,
           name: user.name,
           profileImage: user.profileImage
         }
-      }
+      })
     });
 
   } catch (error) {
@@ -1677,7 +1740,6 @@ app.post("/api/news/:id/comments", checkDB, verifyToken(), async (req, res) => {
   }
 });
 
-// Delete comment
 app.delete("/api/comments/:id", checkDB, verifyToken(), async (req, res) => {
   try {
     const comment = await Comment.findById(req.params.id);
@@ -1716,14 +1778,23 @@ app.delete("/api/comments/:id", checkDB, verifyToken(), async (req, res) => {
 
 // ==================== CATEGORY ROUTES ====================
 
-// Get all categories
 app.get("/api/categories", checkDB, async (req, res) => {
   try {
     const categories = await Category.find().sort({ name: 1 });
     
+    const transformedCategories = categories.map(cat => {
+      const obj = cat.toObject ? cat.toObject() : cat;
+      if (obj._id) {
+        obj.id = obj._id.toString();
+        delete obj._id;
+      }
+      delete obj.__v;
+      return obj;
+    });
+    
     res.json({
       success: true,
-      categories
+      categories: transformedCategories
     });
 
   } catch (error) {
@@ -1736,7 +1807,6 @@ app.get("/api/categories", checkDB, async (req, res) => {
   }
 });
 
-// Get news by category
 app.get("/api/categories/:category/news", checkDB, async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
@@ -1749,17 +1819,18 @@ app.get("/api/categories/:category/news", checkDB, async (req, res) => {
       .populate('author', 'name profileImage')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
+      .limit(parseInt(limit));
 
     const total = await News.countDocuments({ 
       category: req.params.category,
       status: 'published'
     });
 
+    const transformedNews = applyTransform(news);
+
     res.json({
       success: true,
-      news,
+      news: transformedNews,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -1780,14 +1851,23 @@ app.get("/api/categories/:category/news", checkDB, async (req, res) => {
 
 // ==================== LOCATION ROUTES ====================
 
-// Get all locations
 app.get("/api/locations", checkDB, async (req, res) => {
   try {
     const locations = await Location.find().sort({ name: 1 });
     
+    const transformedLocations = locations.map(loc => {
+      const obj = loc.toObject ? loc.toObject() : loc;
+      if (obj._id) {
+        obj.id = obj._id.toString();
+        delete obj._id;
+      }
+      delete obj.__v;
+      return obj;
+    });
+    
     res.json({
       success: true,
-      locations
+      locations: transformedLocations
     });
 
   } catch (error) {
@@ -1800,7 +1880,6 @@ app.get("/api/locations", checkDB, async (req, res) => {
   }
 });
 
-// Get news by location
 app.get("/api/locations/:location/news", checkDB, async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
@@ -1813,17 +1892,18 @@ app.get("/api/locations/:location/news", checkDB, async (req, res) => {
       .populate('author', 'name profileImage')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
+      .limit(parseInt(limit));
 
     const total = await News.countDocuments({ 
       location: req.params.location,
       status: 'published'
     });
 
+    const transformedNews = applyTransform(news);
+
     res.json({
       success: true,
-      news,
+      news: transformedNews,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -1842,7 +1922,6 @@ app.get("/api/locations/:location/news", checkDB, async (req, res) => {
   }
 });
 
-// Set user location
 app.post("/api/user/location", checkDB, verifyToken(), async (req, res) => {
   try {
     const { location } = req.body;
@@ -1856,7 +1935,7 @@ app.post("/api/user/location", checkDB, verifyToken(), async (req, res) => {
     res.json({
       success: true,
       message: "Location updated",
-      user
+      user: applyTransform(user)
     });
 
   } catch (error) {
@@ -1871,16 +1950,14 @@ app.post("/api/user/location", checkDB, verifyToken(), async (req, res) => {
 
 // ==================== REPORTER ROUTES ====================
 
-// Get reporter's news
 app.get("/api/reporter/news", checkDB, verifyToken(['reporter', 'admin']), async (req, res) => {
   try {
     const news = await News.find({ author: req.user.id })
-      .sort({ createdAt: -1 })
-      .lean();
+      .sort({ createdAt: -1 });
 
     res.json({
       success: true,
-      news,
+      news: applyTransform(news),
       count: news.length
     });
 
@@ -1894,7 +1971,6 @@ app.get("/api/reporter/news", checkDB, verifyToken(['reporter', 'admin']), async
   }
 });
 
-// Get reporter stats
 app.get("/api/reporter/stats", checkDB, verifyToken(['reporter', 'admin']), async (req, res) => {
   try {
     const totalNews = await News.countDocuments({ author: req.user.id });
@@ -1929,14 +2005,13 @@ app.get("/api/reporter/stats", checkDB, verifyToken(['reporter', 'admin']), asyn
 
 // ==================== ADMIN ROUTES ====================
 
-// Get all users (Admin only)
 app.get("/api/admin/users", checkDB, verifyToken(['admin']), async (req, res) => {
   try {
     const users = await User.find().select('-password').sort({ createdAt: -1 });
     
     res.json({
       success: true,
-      users,
+      users: applyTransform(users),
       count: users.length
     });
 
@@ -1950,7 +2025,6 @@ app.get("/api/admin/users", checkDB, verifyToken(['admin']), async (req, res) =>
   }
 });
 
-// Update user role (Admin only)
 app.put("/api/admin/users/:id/role", checkDB, verifyToken(['admin']), async (req, res) => {
   try {
     const { role } = req.body;
@@ -1978,7 +2052,7 @@ app.put("/api/admin/users/:id/role", checkDB, verifyToken(['admin']), async (req
     res.json({
       success: true,
       message: "User role updated",
-      user
+      user: applyTransform(user)
     });
 
   } catch (error) {
@@ -1991,7 +2065,6 @@ app.put("/api/admin/users/:id/role", checkDB, verifyToken(['admin']), async (req
   }
 });
 
-// Get system stats (Admin only)
 app.get("/api/admin/stats", checkDB, verifyToken(['admin']), async (req, res) => {
   try {
     const totalUsers = await User.countDocuments();
@@ -2001,8 +2074,7 @@ app.get("/api/admin/stats", checkDB, verifyToken(['admin']), async (req, res) =>
     const recentNews = await News.find()
       .sort({ createdAt: -1 })
       .limit(5)
-      .populate('author', 'name')
-      .lean();
+      .populate('author', 'name');
 
     res.json({
       success: true,
@@ -2014,7 +2086,7 @@ app.get("/api/admin/stats", checkDB, verifyToken(['admin']), async (req, res) =>
         reporters: await User.countDocuments({ role: 'reporter' }),
         admins: await User.countDocuments({ role: 'admin' })
       },
-      recentNews
+      recentNews: applyTransform(recentNews)
     });
 
   } catch (error) {
@@ -2029,7 +2101,6 @@ app.get("/api/admin/stats", checkDB, verifyToken(['admin']), async (req, res) =>
 
 // ==================== SEARCH ROUTES ====================
 
-// Search news
 app.get("/api/search", checkDB, async (req, res) => {
   try {
     const { q, category, location, page = 1, limit = 20 } = req.query;
@@ -2070,10 +2141,11 @@ app.get("/api/search", checkDB, async (req, res) => {
       .populate('author', 'name profileImage')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit))
-      .lean();
+      .limit(parseInt(limit));
 
     const total = await News.countDocuments(query);
+
+    const transformedNews = applyTransform(news);
 
     res.json({
       success: true,
@@ -2082,7 +2154,7 @@ app.get("/api/search", checkDB, async (req, res) => {
         category: category || '',
         location: location || ''
       },
-      news,
+      news: transformedNews,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -2100,6 +2172,34 @@ app.get("/api/search", checkDB, async (req, res) => {
     });
   }
 });
+
+// ==================== SEED DEFAULT CATEGORIES ====================
+const seedCategories = async () => {
+  try {
+    const categories = [
+      { name: 'Politics', slug: 'politics', icon: 'megaphone', color: '#FF3B30' },
+      { name: 'Technology', slug: 'technology', icon: 'hardware-chip', color: '#34C759' },
+      { name: 'Sports', slug: 'sports', icon: 'football', color: '#FF9500' },
+      { name: 'Business', slug: 'business', icon: 'business', color: '#AF52DE' },
+      { name: 'Entertainment', slug: 'entertainment', icon: 'film', color: '#FF2D55' },
+      { name: 'Health', slug: 'health', icon: 'medkit', color: '#32D74B' },
+      { name: 'Science', slug: 'science', icon: 'flask', color: '#5AC8FA' },
+      { name: 'World', slug: 'world', icon: 'globe', color: '#1a237e' }
+    ];
+
+    for (const cat of categories) {
+      await Category.findOneAndUpdate(
+        { slug: cat.slug },
+        cat,
+        { upsert: true, new: true }
+      );
+    }
+    
+    console.log('✅ Categories seeded successfully');
+  } catch (error) {
+    console.error('Error seeding categories:', error);
+  }
+};
 
 // ==================== ERROR HANDLING ====================
 app.use((req, res) => {
@@ -2120,7 +2220,10 @@ app.use((err, req, res, next) => {
 
 // ==================== START SERVER ====================
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 NewsWatch Server running on http://localhost:${PORT}`);
   console.log(`✅ Ready for Cloudinary image URLs from frontend`);
+  
+  // Seed categories on startup
+  await seedCategories();
 });
