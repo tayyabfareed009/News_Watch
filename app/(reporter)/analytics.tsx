@@ -25,13 +25,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 const { width } = Dimensions.get('window');
 
 // Use correct backend URL for your environment
-const BACKEND_URL = __DEV__ 
-  ? Platform.select({
-      ios: 'http://localhost:5000',
-      android: 'http://10.0.2.2:5000',
-      default: 'http://localhost:5000'
-    })
-  : 'https://your-production-backend.com';
+const BACKEND_URL ='https://news-watch-6zyq.vercel.app';
 
 // Types based on your backend structure
 interface NewsStats {

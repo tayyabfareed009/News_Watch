@@ -23,7 +23,7 @@ import {
 const { width } = Dimensions.get('window');
 
 // Make sure this matches your Home Screen URL
-const BACKEND_URL = "http://localhost:5000";
+const BACKEND_URL = "https://news-watch-6zyq.vercel.app";
 
 // Types (same as home screen or import from shared types)
 interface NewsItem {

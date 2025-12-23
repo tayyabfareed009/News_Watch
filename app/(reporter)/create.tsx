@@ -21,7 +21,7 @@ import {
 const { width } = Dimensions.get('window');
 
 // Backend URL - Update this to your actual backend
-const BACKEND_URL = "http://localhost:5000";
+const BACKEND_URL = "https://news-watch-6zyq.vercel.app";
 
 // Cloudinary Configuration
 const CLOUDINARY_URL = "https://api.cloudinary.com/v1_1/dkwxr9ege/image/upload";

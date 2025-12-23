@@ -19,7 +19,7 @@ import {
 
 // ⚠️ IMPORTANT: Change this to your actual server IP address
 // Use same IP as signup and OTP screens
-const BASE_URL = 'http://localhost:5000'; // Use your computer's IP address
+const BASE_URL = 'https://news-watch-6zyq.vercel.app'; // Use your computer's IP address
 
 // Web-compatible alert function
 const showAlert = (title: string, message: string, buttons?: Array<{ text: string, onPress?: () => void, style?: 'cancel' | 'default' | 'destructive' }>) => {
@@ -220,7 +220,7 @@ export default function LoginScreen() {
               router.replace('/(reporter)/dashboard');
             } else {
               console.log('📍 [Login] Going to main tabs');
-              router.replace('/(tabs)');
+              router.replace('/location');
             }
           }
         } else {

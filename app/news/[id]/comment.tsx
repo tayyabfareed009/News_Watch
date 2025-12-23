@@ -4,28 +4,24 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Animated,
-    FlatList,
-    Image,
-    KeyboardAvoidingView,
-    Platform,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  Animated,
+  FlatList,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // ⚠️ IMPORTANT: Change this to match your backend URL
-const BACKEND_URL = Platform.select({
-  ios: 'http://localhost:5000',
-  android: 'http://10.0.2.2:5000',
-  default: 'http://localhost:5000'
-});
+const BACKEND_URL = 'https://news-watch-6zyq.vercel.app';
 
 // Types
 interface User {

@@ -25,13 +25,7 @@ import {
 const { width, height } = Dimensions.get('window');
 
 // BACKEND CONFIGURATION
-const BACKEND_URL = __DEV__ 
-  ? Platform.select({
-      ios: 'http://localhost:5000',
-      android: 'http://10.0.2.2:5000',
-      default: 'http://localhost:5000'
-    })
-  : 'https://your-production-backend.com';
+const BACKEND_URL ='https://news-watch-6zyq.vercel.app';
 
 console.log('📱 HomeScreen - Backend URL:', BACKEND_URL);
 console.log('📱 HomeScreen - Platform:', Platform.OS);
@@ -751,7 +745,7 @@ const navigateToNewsDetail = (newsId: string, newsItem?: NewsItem) => {
             style={styles.locationButton}
             onPress={() => {
               console.log('📍 Navigating to locations');
-              router.push('/locations');
+              router.push('/location');
             }}
           >
             <Ionicons name="location" size={16} color="#fff" />

@@ -24,13 +24,7 @@ import {
 const { width } = Dimensions.get('window');
 
 // BACKEND CONFIGURATION
-const BACKEND_URL = __DEV__ 
-  ? Platform.select({
-      ios: 'http://localhost:5000',
-      android: 'http://10.0.2.2:5000',
-      default: 'http://localhost:5000'
-    })
-  : 'https://your-production-backend.com';
+const BACKEND_URL ='https://news-watch-6zyq.vercel.app';
 
 console.log('📱 ReporterDashboard - Backend URL:', BACKEND_URL);
 

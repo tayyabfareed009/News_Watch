@@ -21,7 +21,7 @@ import {
 // ⚠️ IMPORTANT: Change this to your actual server IP address
 // For development: Use your computer's IP address (not localhost)
 // Example: 'http://192.168.1.100:5000'
-const BASE_URL = 'http://localhost:5000'; 
+const BASE_URL = 'https://news-watch-6zyq.vercel.app'; 
 
 type UserType = 'reporter' | 'visitor' | null;
 

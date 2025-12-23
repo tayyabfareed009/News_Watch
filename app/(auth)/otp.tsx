@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 
 // ⚠️ IMPORTANT: Change this to your actual server IP address
-const BASE_URL = 'http://localhost:5000'; // Use same IP as signup screen
+const BASE_URL = 'https://news-watch-6zyq.vercel.app'; // Use same IP as signup screen
 
 type OtpPurpose = 'signup' | 'forgot-password' | 'verify-email';
 

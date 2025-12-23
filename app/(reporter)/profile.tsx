@@ -4,19 +4,19 @@ import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Image,
-    SafeAreaView,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Image,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
-const BACKEND_URL = "http://localhost:5000";
+const BACKEND_URL = "https://news-watch-6zyq.vercel.app";
 
 interface UserProfile {
   id: string;
@@ -71,8 +71,8 @@ export default function ProfileScreen() {
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const token = await AsyncStorage.getItem('token');
-      const userJson = await AsyncStorage.getItem('user');
+      const token = await AsyncStorage.getItem('userToken');
+      const userJson = await AsyncStorage.getItem('userData');
       
       if (!token || !userJson) {
         Alert.alert('Error', 'Please login again');
@@ -211,8 +211,17 @@ export default function ProfileScreen() {
   };
 
   const handleChangePassword = () => {
-    Alert.alert('Change Password', 'This feature will be available soon');
-  };
+  Alert.alert(
+    'Change Password',
+    'Are you sure you want to change Password',
+    [
+      { 
+        text: 'OK', 
+        onPress: () => router.push("/(auth)/forgot-password")
+      }
+    ]
+  );
+};
 
   const uploadMediaDocument = () => {
     Alert.alert('Upload Document', 'This feature will be available soon');
