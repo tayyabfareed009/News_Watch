@@ -22,7 +22,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // ==================== MONGODB CONNECTION ====================
 //const MONGO_URI = process.env.MONGODB_URI || "mongodb+srv://tayyabfareed:11223344@cluster0.hwkmm79.mongodb.net/newswatch?retryWrites=true&w=majority&appName=Cluster0";
 // ==================== MONGODB CONNECTION FOR VERCEL ====================
-const MONGO_URI = process.env.MONGODB_URI || "mongodb+srv://tayyabfareed:11223344@cluster0.hwkmm79.mongodb.net/newswatch?retryWrites=true&w=majority&appName=Cluster0";
+const MONGO_URI = process.env.MONGODB_URI;
 
 // Global connection state
 let dbConnected = false;
@@ -375,7 +375,7 @@ const applyTransform = (doc) => {
 };
 
 // ==================== TOKEN VERIFICATION MIDDLEWARE ====================
-const JWT_SECRET = process.env.JWT_SECRET || "newswatch_secret_key";
+const JWT_SECRET = process.env.JWT_SECRET;
 
 const verifyToken = (allowedRoles = []) => (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
