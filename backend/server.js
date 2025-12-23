@@ -29,56 +29,29 @@ let dbConnected = false;
 let connectionPromise = null;
 
 async function connectDB() {
-  if (dbConnected && mongoose.connection.readyState === 1) {
+  if (mongoose.connection.readyState === 1) return true;
+  if (connectionPromise) return connectionPromise;
+
+  try {
+    connectionPromise = mongoose.connect(MONGO_URI, {
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      connectTimeoutMS: 10000,
+      maxPoolSize: 10,
+      minPoolSize: 1,
+    });
+
+    await connectionPromise;
+    console.log("✅ MongoDB connected");
     return true;
-  }
-  
-  // Prevent multiple simultaneous connection attempts
-  if (connectionPromise) {
-    return connectionPromise;
-  }
-  
-  connectionPromise = mongoose.connect(MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-    serverSelectionTimeoutMS: 10000,
-    socketTimeoutMS: 45000,
-    connectTimeoutMS: 10000,
-    maxPoolSize: 10,
-    minPoolSize: 1,
-  })
-  .then(() => {
-    console.log("✅ MongoDB Connected Successfully");
-    dbConnected = true;
+
+  } catch (error) {
+    console.error("❌ MongoDB connection error:", error.message);
     connectionPromise = null;
-    
-    // Connection event handlers
-    mongoose.connection.on('error', (err) => {
-      console.error('MongoDB connection error:', err.message);
-      dbConnected = false;
-    });
-    
-    mongoose.connection.on('disconnected', () => {
-      console.log('MongoDB disconnected');
-      dbConnected = false;
-    });
-    
-    mongoose.connection.on('reconnected', () => {
-      console.log('MongoDB reconnected');
-      dbConnected = true;
-    });
-    
-    return true;
-  })
-  .catch((err) => {
-    console.error("❌ MongoDB Connection Failed:", err.message);
-    dbConnected = false;
-    connectionPromise = null;
-    return false;
-  });
-  
-  return connectionPromise;
+    throw error;
+  }
 }
+
 
 // Connect on startup (non-blocking for Vercel)
 if (process.env.VERCEL !== '1') {
