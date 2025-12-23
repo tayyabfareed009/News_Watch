@@ -28,29 +28,64 @@ const MONGO_URI = process.env.MONGODB_URI;
 let dbConnected = false;
 let connectionPromise = null;
 
+
 async function connectDB() {
-  if (mongoose.connection.readyState === 1) return true;
-  if (connectionPromise) return connectionPromise;
-
-  try {
-    connectionPromise = mongoose.connect(MONGO_URI, {
-      serverSelectionTimeoutMS: 10000,
-      socketTimeoutMS: 45000,
-      connectTimeoutMS: 10000,
-      maxPoolSize: 10,
-      minPoolSize: 1,
-    });
-
-    await connectionPromise;
-    console.log("✅ MongoDB connected");
-    return true;
-
-  } catch (error) {
-    console.error("❌ MongoDB connection error:", error.message);
-    connectionPromise = null;
-    throw error;
+  if (dbConnected) return true;
+  
+  if (connectionPromise) {
+    return connectionPromise;
   }
+  
+  connectionPromise = mongoose.connect(MONGO_URI, {
+    useNewUrlParser: true,
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 10000,  // Increased to 10 seconds
+    socketTimeoutMS: 45000,
+    connectTimeoutMS: 10000,
+    maxPoolSize: 10,
+    minPoolSize: 1,
+  })
+  .then(() => {
+    console.log("✅ MongoDB Connected Successfully");
+    dbConnected = true;
+    connectionPromise = null;
+    
+    mongoose.connection.on('error', (err) => {
+      console.error('MongoDB connection error:', err);
+      dbConnected = false;
+    });
+    
+    mongoose.connection.on('disconnected', () => {
+      console.log('MongoDB disconnected');
+      dbConnected = false;
+    });
+    
+    mongoose.connection.on('reconnected', () => {
+      console.log('MongoDB reconnected');
+      dbConnected = true;
+    });
+    
+    return true;
+  })
+  .catch((err) => {
+    console.error("❌ MongoDB Connection Failed:", err.message);
+    dbConnected = false;
+    connectionPromise = null;
+    return false;
+  });
+  
+  return connectionPromise;
 }
+
+// Connect on startup (non-blocking)
+connectDB().then(connected => {
+  if (connected) {
+    console.log("Database ready");
+  } else {
+    console.log("Database connection failed, API will run with limited functionality");
+  }
+});
+
 
 
 // Connect on startup (non-blocking for Vercel)
