@@ -375,7 +375,7 @@ const applyTransform = (doc) => {
 };
 
 // ==================== TOKEN VERIFICATION MIDDLEWARE ====================
-const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_SECRET = process.env.JWT_SECRET_NEWS;
 
 const verifyToken = (allowedRoles = []) => (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
